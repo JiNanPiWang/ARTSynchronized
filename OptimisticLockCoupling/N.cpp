@@ -7,6 +7,7 @@
 #include "N48.cpp"
 #include "N256.cpp"
 
+
 namespace ART_OLC {
 
     void N::setType(NTypes type) {
@@ -122,6 +123,137 @@ namespace ART_OLC {
         threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
         parentNode->writeUnlock();
     }
+    
+    template<typename curN, typename biggerN>
+    void N::insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart) {
+        if (!n->isFull()) {
+            if (parentNode != nullptr) {
+                parentNode->readUnlockOrRestart(parentVersion, needRestart);
+                if (needRestart) return;
+            }
+            n->upgradeToWriteLockOrRestart(v, needRestart);
+            if (needRestart) return;
+            n->insert(key, val);
+            n->writeUnlock();
+            return;
+        }
+
+        parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+        if (needRestart) return;
+
+        n->upgradeToWriteLockOrRestart(v, needRestart);
+        if (needRestart) {
+            parentNode->writeUnlock();
+            return;
+        }
+
+        auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+        n->copyTo(nBig);
+        nBig->insert(key, val);
+
+        N::change(parentNode, keyParent, nBig);
+        
+        
+
+        n->writeUnlockObsolete();
+        operator delete(n);
+        parentNode->writeUnlock();
+    }
+    
+    template<typename curN, typename biggerN>
+    void N::insertGrowBlock(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, Cache &c,int level) {
+
+        parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+        if (needRestart) return;
+
+        n->upgradeToWriteLockOrRestart(v, needRestart);
+        if (needRestart) {
+            parentNode->writeUnlock();
+            return;
+        }
+        
+        if(level==7)//如果当前是叶子节点的层  则进行分裂缓存
+        {
+            auto nBig = new N256(n->getPrefix(), n->getPrefixLength());
+            n->copyTo(nBig);
+            nBig->insert(key, val);
+
+            N::change(parentNode, keyParent, nBig);
+            
+            c.cache_node=nBig;
+            c.cache_parentKey=keyParent;
+            n->writeUnlockObsolete();
+            operator delete(n);
+            parentNode->writeUnlock();
+        }
+        else //否则不缓存
+        {
+            auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+            n->copyTo(nBig);
+            nBig->insert(key, val);
+
+            N::change(parentNode, keyParent, nBig);
+
+            n->writeUnlockObsolete();
+            operator delete(n);
+            parentNode->writeUnlock();
+        }
+    }
+    
+
+
+    template<typename curN, typename biggerN>
+    void N::insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, ThreadInfo &threadInfo) {
+        if (!n->isFull()) {
+            n->insert(key, val);
+            return;
+        }
+
+        auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+        n->copyTo(nBig);
+        nBig->insert(key, val);
+
+        N::change(parentNode, keyParent, nBig);
+
+	    operator delete(n);
+        //threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+    }
+	
+    template<typename curN, typename biggerN>
+    void N::insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val) {
+        if (!n->isFull()) {
+            n->insert(key, val);
+            return;
+        }
+
+        auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+        n->copyTo(nBig);
+        nBig->insert(key, val);
+
+        N::change(parentNode, keyParent, nBig);
+
+        operator delete(n);
+        //threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+    }
+    
+    template<typename curN, typename biggerN>
+    void N::insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache &c) {
+        if (!n->isFull()) {
+            n->insert(key, val);
+            return;
+        }
+        // std::cout<<1<<std::endl;
+        auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+        n->copyTo(nBig);
+        nBig->insert(key, val);
+
+        N::change(parentNode, keyParent, nBig);
+        c.cache_node=nBig;
+        c.cache_parentKey=keyParent;
+        
+        operator delete(n);
+        //threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+    }
 
     void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo) {
         switch (node->getType()) {
@@ -143,6 +275,168 @@ namespace ART_OLC {
             case NTypes::N256: {
                 auto n = static_cast<N256 *>(node);
                 insertGrow<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+                break;
+            }
+        }
+    }
+
+    void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart) {
+        switch (node->getType()) {
+            case NTypes::N4: {
+                auto n = static_cast<N4 *>(node);
+                insertGrow<N4, N16>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart);
+                break;
+            }
+            case NTypes::N16: {
+                auto n = static_cast<N16 *>(node);
+                insertGrow<N16, N48>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart);
+                break;
+            }
+            case NTypes::N48: {
+                auto n = static_cast<N48 *>(node);
+                insertGrow<N48, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart);
+                break;
+            }
+            case NTypes::N256: {
+                auto n = static_cast<N256 *>(node);
+                insertGrow<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart);
+                break;
+            }
+        }
+    }
+
+     void N::insertAndUnlockBlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart,Cache &c, int level) {
+        switch (node->getType()) {
+            case NTypes::N4: {
+                auto n = static_cast<N4 *>(node);
+                insertGrowBlock<N4, N16>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart,c,level);
+                break;
+            }
+            case NTypes::N16: {
+                auto n = static_cast<N16 *>(node);
+                insertGrowBlock<N16, N48>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart,c,level);
+                break;
+            }
+            case NTypes::N48: {
+                auto n = static_cast<N48 *>(node);
+                insertGrowBlock<N48, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart,c,level);
+                break;
+            }
+            case NTypes::N256: {
+                auto n = static_cast<N256 *>(node);
+                insertGrowBlock<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart,c,level);
+                break;
+            }
+        }
+    }
+
+    void N::insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, ThreadInfo &threadInfo) {
+        switch (node->getType()) {
+            case NTypes::N4: {
+                auto n = static_cast<N4 *>(node);
+                insertGrow_lockfree<N4, N16>(n,  parentNode, parentVersion, keyParent, key, val, threadInfo);
+                break;
+            }
+            case NTypes::N16: {
+                auto n = static_cast<N16 *>(node);
+                insertGrow_lockfree<N16, N48>(n, parentNode, parentVersion, keyParent, key, val, threadInfo);
+                break;
+            }
+            case NTypes::N48: {
+                auto n = static_cast<N48 *>(node);
+                insertGrow_lockfree<N48, N256>(n, parentNode, parentVersion, keyParent, key, val, threadInfo);
+                break;
+            }
+            case NTypes::N256: {
+                auto n = static_cast<N256 *>(node);
+                insertGrow_lockfree<N256, N256>(n, parentNode, parentVersion, keyParent, key, val, threadInfo);
+                break;
+            }
+        }
+    }
+
+    void N::insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val) {
+        switch (node->getType()) {
+            case NTypes::N4: {
+                auto n = static_cast<N4 *>(node);
+                insertGrow_lockfree<N4, N16>(n,  parentNode, parentVersion, keyParent, key, val);
+                break;
+            }
+            case NTypes::N16: {
+                auto n = static_cast<N16 *>(node);
+                insertGrow_lockfree<N16, N48>(n, parentNode, parentVersion, keyParent, key, val);
+                break;
+            }
+            case NTypes::N48: {
+                auto n = static_cast<N48 *>(node);
+                insertGrow_lockfree<N48, N256>(n, parentNode, parentVersion, keyParent, key, val);
+                break;
+            }
+            case NTypes::N256: {
+                auto n = static_cast<N256 *>(node);
+                insertGrow_lockfree<N256, N256>(n, parentNode, parentVersion, keyParent, key, val);
+                break;
+            }
+        }
+    }
+    
+    void N::insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache& c) {
+        // if(node==NULL)std::cout<<111<<std::endl;
+        switch (node->getType()) {
+            case NTypes::N4: {
+                // std::cout<<4<<std::endl;
+                auto n = static_cast<N4 *>(node);
+                insertGrow_lockfree<N4, N16>(n,  parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N16: {
+                // std::cout<<16<<std::endl;
+                auto n = static_cast<N16 *>(node);
+                insertGrow_lockfree<N16, N48>(n, parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N48: {
+                // std::cout<<48<<std::endl;
+                auto n = static_cast<N48 *>(node);
+                if(key==256)std::cout<<48<<std::endl;
+                insertGrow_lockfree<N48, N256>(n, parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N256: {
+                // std::cout<<256<<std::endl;
+                if(key==256)std::cout<<48<<std::endl;
+                auto n = static_cast<N256 *>(node);
+                insertGrow_lockfree<N256, N256>(n, parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+        }
+    }
+
+    void N::insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache& c,int size) {
+        // if(node==NULL)std::cout<<111<<std::endl;
+        switch (node->getType()) {
+            case NTypes::N4: {
+                // std::cout<<4<<std::endl;
+                auto n = static_cast<N4 *>(node);
+                insertGrow_lockfree<N4, N256>(n,  parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N16: {
+                // std::cout<<16<<std::endl;
+                auto n = static_cast<N16 *>(node);
+                insertGrow_lockfree<N16, N256>(n, parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N48: {
+                // std::cout<<48<<std::endl;
+                auto n = static_cast<N48 *>(node);
+                insertGrow_lockfree<N48, N256>(n, parentNode, parentVersion, keyParent, key, val, c);
+                break;
+            }
+            case NTypes::N256: {
+                // std::cout<<256<<std::endl;
+                auto n = static_cast<N256 *>(node);
+                insertGrow_lockfree<N256, N256>(n, parentNode, parentVersion, keyParent, key, val, c);
                 break;
             }
         }
@@ -348,6 +642,8 @@ namespace ART_OLC {
             }
             default: {
                 assert(false);
+                //std::ofstream outfile;
+                // printf("11");
                 __builtin_unreachable();
             }
         }
@@ -401,6 +697,22 @@ namespace ART_OLC {
             }
         }
     }
+
+    TID N::getAnyChildTid_lockfree(const N *n) {
+        const N *nextNode = n;
+
+        while (true) {
+            const N *node = nextNode;
+
+            nextNode = getAnyChild(node);
+
+            assert(nextNode != nullptr);
+            if (isLeaf(nextNode)) {
+                return getLeaf(nextNode);
+            }
+        }
+    }
+
 
     uint64_t N::getChildren(const N *node, uint8_t start, uint8_t end, std::tuple<uint8_t, N *> children[],
                         uint32_t &childrenCount) {

@@ -13,6 +13,7 @@
 #include "../Epoche.h"
 
 using TID = uint64_t;
+struct Cache;
 
 using namespace ART;
 namespace ART_OLC {
@@ -94,6 +95,19 @@ namespace ART_OLC {
         static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart,
                                     ThreadInfo &threadInfo);
 
+        static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart);
+
+        static void insertAndUnlockBlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, Cache& c, int level);
+
+        static void insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val,
+                                    ThreadInfo &threadInfo);
+	
+	static void insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache& c);
+
+    static void insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache& c,int size);
+
+	static void insertAndUnlock_lockfree(N *node, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val);
+
         static bool change(N *node, uint8_t key, N *val);
 
         static void removeAndUnlock(N *node, uint64_t v, uint8_t key, N *parentNode, uint64_t parentVersion, uint8_t keyParent, bool &needRestart, ThreadInfo &threadInfo);
@@ -118,6 +132,8 @@ namespace ART_OLC {
 
         static TID getAnyChildTid(const N *n, bool &needRestart);
 
+        static TID getAnyChildTid_lockfree(const N *n);
+
         static void deleteChildren(N *node);
 
         static void deleteNode(N *node);
@@ -126,6 +142,21 @@ namespace ART_OLC {
 
         template<typename curN, typename biggerN>
         static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo);
+
+        template<typename curN, typename biggerN>
+        static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart);
+
+        template<typename curN, typename biggerN>
+        static void insertGrowBlock(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, Cache &c,int level); 
+
+        template<typename curN, typename biggerN>
+        static void insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val,  ThreadInfo &threadInfo);
+	
+	template<typename curN, typename biggerN>
+        static void insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val);
+	
+	template<typename curN, typename biggerN>
+        static void insertGrow_lockfree(curN *n, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, Cache &c);
 
         template<typename curN, typename smallerN>
         static void removeAndShrink(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, bool &needRestart, ThreadInfo &threadInfo);
@@ -291,4 +322,10 @@ namespace ART_OLC {
                          uint32_t &childrenCount) const;
     };
 }
+struct Cache{
+    uint64_t cache_key;
+    ART_OLC::N* cache_node;
+    ART_OLC::N* cache_parentnode;
+    uint8_t cache_parentKey;
+};
 #endif //ART_OPTIMISTIC_LOCK_COUPLING_N_H

@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <algorithm>
+#include <iostream>
 #include "N.h"
 
 namespace ART_OLC {

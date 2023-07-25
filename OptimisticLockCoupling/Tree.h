@@ -46,6 +46,13 @@ namespace ART_OLC {
             NoMatch
         };
         static CheckPrefixResult checkPrefix(N* n, const Key &k, uint32_t &level);
+        
+        static CheckPrefixPessimisticResult checkPrefixPessimistic_lockfree(N *n, const Key &k, uint32_t &level,
+                                                                   uint8_t &nonMatchingKey,
+                                                                   Prefix &nonMatchingPrefix,
+                                                                   LoadKeyFunction loadKey);
+
+
 
         static CheckPrefixPessimisticResult checkPrefixPessimistic(N *n, const Key &k, uint32_t &level,
                                                                    uint8_t &nonMatchingKey,
@@ -77,7 +84,21 @@ namespace ART_OLC {
 
         void insert(const Key &k, TID tid, ThreadInfo &epocheInfo);
 
+        void insert(const Key &k, TID tid, Cache& c, int &time);
+
+        void insert_level(const Key &k, TID tid, int *levelcount);
+
+        void insert_level(const Key &k, TID tid, int partition_level);
+
         void remove(const Key &k, TID tid, ThreadInfo &epocheInfo);
+
+        void insert_lockfree(const Key &k, TID tid, ThreadInfo &epocheInfo);
+        
+	    void insert_lockfree(const Key &k, TID tid, ThreadInfo &epocheInfo, Cache &c);
+
+	    void insert_lockfree(const Key &k, TID tid);
+
+        void insert_root_and_first();
     };
 }
 #endif //ART_OPTIMISTICLOCK_COUPLING_N_H

@@ -1,12 +1,12 @@
 #include <assert.h>
 #include <algorithm>
-
+#include <iostream>
 #include "N.h"
 #include "N4.cpp"
 #include "N16.cpp"
 #include "N48.cpp"
 #include "N256.cpp"
-
+using namespace std;
 namespace ART_unsynchronized {
 
     void N::setType(NTypes type) {
@@ -169,7 +169,7 @@ namespace ART_unsynchronized {
         }
 
         auto nSmall = new smallerN(n->getPrefix(), n->getPrefixLength());
-
+        //printf("test\n");
 
         n->remove(key, true);
         n->copyTo(nSmall);

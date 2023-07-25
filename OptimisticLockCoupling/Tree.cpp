@@ -5,8 +5,10 @@
 #include "N.cpp"
 #include "../Epoche.cpp"
 #include "../Key.h"
-
-
+#include <chrono>
+#include<iostream>
+using namespace std;
+// extern std::atomic<uint64_t> sum;
 namespace ART_OLC {
 
     Tree::Tree(LoadKeyFunction loadKey) : root(new N256( nullptr, 0)), loadKey(loadKey) {
@@ -500,21 +502,27 @@ namespace ART_OLC {
 
     void Tree::insert(const Key &k, TID tid, ThreadInfo &epocheInfo) {
         EpocheGuard epocheGuard(epocheInfo);
+        //int count=0;
+        //cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
         restart:
+        
         bool needRestart = false;
-
+        //cout<<sum++<<endl;
+        // sum.fetch_add(1);
         N *node = nullptr;
         N *nextNode = root;
         N *parentNode = nullptr;
         uint8_t parentKey, nodeKey = 0;
         uint64_t parentVersion = 0;
         uint32_t level = 0;
-
+        
         while (true) {
+            
             parentNode = node;
             parentKey = nodeKey;
             node = nextNode;
             auto v = node->readLockOrRestart(needRestart);
+            
             if (needRestart) goto restart;
 
             uint32_t nextLevel = level;
@@ -523,11 +531,11 @@ namespace ART_OLC {
             Prefix remainingPrefix;
             auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
                                    this->loadKey, needRestart); // increases level
-            if (needRestart) goto restart;
+            if (needRestart)goto restart;
             switch (res) {
                 case CheckPrefixPessimisticResult::NoMatch: {
                     parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
-                    if (needRestart) goto restart;
+                    if (needRestart)goto restart;
 
                     node->upgradeToWriteLockOrRestart(v, needRestart);
                     if (needRestart) {
@@ -540,7 +548,126 @@ namespace ART_OLC {
                     // 2)  add node and (tid, *k) as children
                     newNode->insert(k[nextLevel], N::setLeaf(tid));
                     newNode->insert(nonMatchingKey, node);
+                    
+                    // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    N::change(parentNode, parentKey, newNode);
+                    parentNode->writeUnlock();
 
+                    // 4) update prefix of node, unlock
+                    node->setPrefix(remainingPrefix,
+                                    node->getPrefixLength() - ((nextLevel - level) + 1));
+
+                    node->writeUnlock();
+                    //sum+=count;
+                    //if(count>1000)printf("%d\n",count);
+                    //if(count!=0)printf("%d\n",count);
+                    return;
+                }
+                case CheckPrefixPessimisticResult::Match:
+                    break;
+            }
+            level = nextLevel;
+            nodeKey = k[level];
+            nextNode = N::getChild(nodeKey, node);
+            node->checkOrRestart(v,needRestart);
+            if (needRestart)goto restart;
+
+            if (nextNode == nullptr) {//没有对应key的儿子节点
+                N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart, epocheInfo);
+                if (needRestart)goto restart;
+            
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                return;
+            }
+
+            if (parentNode != nullptr) {
+                parentNode->readUnlockOrRestart(parentVersion, needRestart);
+                if (needRestart)goto restart;
+            }
+
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+                node->upgradeToWriteLockOrRestart(v, needRestart);
+                if (needRestart)goto restart;
+
+                Key key;
+                loadKey(N::getLeaf(nextNode), key);
+
+                level++;
+                uint32_t prefixLength = 0;
+                while (key[level + prefixLength] == k[level + prefixLength]) {
+                    prefixLength++;
+                }
+
+                auto n4 = new N4(&k[level], prefixLength);
+                n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                n4->insert(key[level + prefixLength], nextNode);
+                N::change(node, k[level - 1], n4);
+                node->writeUnlock();
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                return;
+            }
+            level++;//对应key的内部节点  就进入下一层继续搜索
+            parentVersion = v;
+        }
+    }
+    
+    void Tree::insert(const Key &k, TID tid, Cache& c,int &time) {
+        restart:
+        
+        bool needRestart = false;
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+        
+        //若cache不为空，直接对其节点进行插入
+        if(c.cache_node!=NULL)
+        {
+            N::insertAndUnlock_lockfree(c.cache_node, c.cache_parentnode, parentVersion, c.cache_parentKey, tid&0x0FF, N::setLeaf(tid),  c);
+            return;
+        }
+        
+        //否则正常查找
+
+        while (true) {
+            
+            parentNode = node;
+            parentKey = nodeKey;
+            node = nextNode;
+            auto v = node->readLockOrRestart(needRestart);
+            
+            if (needRestart) goto restart;
+
+            uint32_t nextLevel = level;
+
+            uint8_t nonMatchingKey;
+            Prefix remainingPrefix;
+            auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                   this->loadKey, needRestart); // increases level
+            if (needRestart)goto restart;
+            switch (res) {
+                case CheckPrefixPessimisticResult::NoMatch: {
+                    parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+                    if (needRestart)goto restart;
+
+                    node->upgradeToWriteLockOrRestart(v, needRestart);
+                    if (needRestart) {
+                        parentNode->writeUnlock();
+                        goto restart;
+                    }
+                    // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                    // 2)  add node and (tid, *k) as children
+                    newNode->insert(k[nextLevel], N::setLeaf(tid));
+                    newNode->insert(nonMatchingKey, node);
+                    
                     // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
                     N::change(parentNode, parentKey, newNode);
                     parentNode->writeUnlock();
@@ -559,22 +686,449 @@ namespace ART_OLC {
             nodeKey = k[level];
             nextNode = N::getChild(nodeKey, node);
             node->checkOrRestart(v,needRestart);
-            if (needRestart) goto restart;
+            if (needRestart)goto restart;
 
-            if (nextNode == nullptr) {
-                N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart, epocheInfo);
-                if (needRestart) goto restart;
+            if (nextNode == nullptr) {//无对应节点  直接插入
+                N::insertAndUnlockBlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart, c, level);
+                if (needRestart)goto restart;
                 return;
             }
 
             if (parentNode != nullptr) {
                 parentNode->readUnlockOrRestart(parentVersion, needRestart);
-                if (needRestart) goto restart;
+                if (needRestart)goto restart;
             }
 
-            if (N::isLeaf(nextNode)) {
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
                 node->upgradeToWriteLockOrRestart(v, needRestart);
-                if (needRestart) goto restart;
+                if (needRestart)goto restart;
+                
+                Key key;
+                loadKey(N::getLeaf(nextNode), key);
+                level++;
+                uint32_t prefixLength = 0;
+                while (key[level + prefixLength] == k[level + prefixLength]) {
+                    prefixLength++;
+                }
+                auto n4 = new N256(&k[level], prefixLength);
+                n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                n4->insert(key[level + prefixLength], nextNode);
+                N::change(node, k[level - 1], n4);
+                node->writeUnlock();
+                return;
+            }
+            level++;
+            parentVersion = v;
+        }
+    }
+
+    void Tree::insert_level(const Key &k, TID tid,int *levelcount) {
+        //EpocheGuard epocheGuard(epocheInfo);
+        //int count=0;
+        //cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
+        restart:
+        
+        bool needRestart = false;
+        //cout<<sum++<<endl;
+        // sum.fetch_add(1);
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+        
+        // while (true) {
+            
+            // if(level>0)
+            // {
+                while (true) {
+                    parentNode = node;
+                    parentKey = nodeKey;
+                    node = nextNode;
+
+                    uint32_t nextLevel = level;
+                    uint8_t nonMatchingKey;
+                    Prefix remainingPrefix;
+                    auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                        this->loadKey); // increases level
+                    switch (res) {
+                        case CheckPrefixPessimisticResult::NoMatch: {
+                            // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                            auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                            // 2)  add node and (tid, *k) as children
+                            newNode->insert(k[nextLevel], N::setLeaf(tid));
+                            newNode->insert(nonMatchingKey, node);
+                            // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                            N::change(parentNode, parentKey, newNode);
+                            //parentNode->writeUnlock();
+
+                            // 4) update prefix of node, unlock
+                            node->setPrefix(remainingPrefix,
+                                            node->getPrefixLength() - ((nextLevel - level) + 1));
+                            //levelcount[level]++;
+                            return;
+                        }
+                        case CheckPrefixPessimisticResult::Match:
+                            break;
+                    }
+                    level = nextLevel;
+                    nodeKey = k[level];
+                    nextNode = N::getChild(nodeKey, node);
+
+                    if (nextNode == nullptr) {//没有对应key的儿子节点
+                        N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid));
+                        //levelcount[level]++;
+                        return;
+                    }
+
+                    if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+                        Key key;
+                        loadKey(N::getLeaf(nextNode), key);
+
+                        level++;
+                        uint32_t prefixLength = 0;
+                        while (key[level + prefixLength] == k[level + prefixLength]) {
+                            prefixLength++;
+                        }
+
+                        auto n4 = new N4(&k[level], prefixLength);
+                        n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                        n4->insert(key[level + prefixLength], nextNode);
+                        N::change(node, k[level - 1], n4);
+                        //sum+=count;
+                        //if(count>1000)printf("%d\n",count);
+                        //if(count!=0)printf("%d\n",count);
+                        //levelcount[level]++;
+                        return;
+                    }
+                    level++;//对应key的内部节点  就进入下一层继续搜索
+                }
+            //}
+        //     parentNode = node;
+        //     parentKey = nodeKey;
+        //     node = nextNode;
+        //     auto v = node->readLockOrRestart(needRestart);
+            
+        //     if (needRestart) goto restart;
+
+        //     uint32_t nextLevel = level;
+
+        //     uint8_t nonMatchingKey;
+        //     Prefix remainingPrefix;
+        //     auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+        //                            this->loadKey, needRestart); // increases level
+        //     if (needRestart)goto restart;
+        //     switch (res) {
+        //         case CheckPrefixPessimisticResult::NoMatch: {
+        //             parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+        //             if (needRestart)goto restart;
+
+        //             node->upgradeToWriteLockOrRestart(v, needRestart);
+        //             if (needRestart) {
+        //                 parentNode->writeUnlock();
+        //                 goto restart;
+        //             }
+        //             // 1) Create new node which will be parent of node, Set common prefix, level to this node
+        //             auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+        //             // 2)  add node and (tid, *k) as children
+        //             newNode->insert(k[nextLevel], N::setLeaf(tid));
+        //             newNode->insert(nonMatchingKey, node);
+                    
+        //             // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+        //             N::change(parentNode, parentKey, newNode);
+        //             parentNode->writeUnlock();
+
+        //             // 4) update prefix of node, unlock
+        //             node->setPrefix(remainingPrefix,
+        //                             node->getPrefixLength() - ((nextLevel - level) + 1));
+
+        //             node->writeUnlock();
+        //             //sum+=count;
+        //             //if(count>1000)printf("%d\n",count);
+        //             //if(count!=0)printf("%d\n",count);
+        //             //levelcount[level]++;
+        //             return;
+        //         }
+        //         case CheckPrefixPessimisticResult::Match:
+        //             break;
+        //     }
+        //     level = nextLevel;
+        //     nodeKey = k[level];
+        //     nextNode = N::getChild(nodeKey, node);
+        //     node->checkOrRestart(v,needRestart);
+        //     if (needRestart)goto restart;
+
+        //     if (nextNode == nullptr) {//没有对应key的儿子节点
+        //         N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart);
+        //         if (needRestart)goto restart;
+        //         //levelcount[level]++;
+        //         //sum+=count;
+        //         //if(count>1000)printf("%d\n",count);
+        //         //if(count!=0)printf("%d\n",count);
+        //         return;
+        //     }
+
+        //     if (parentNode != nullptr) {
+        //         parentNode->readUnlockOrRestart(parentVersion, needRestart);
+        //         if (needRestart)goto restart;
+        //     }
+
+        //     if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+        //         node->upgradeToWriteLockOrRestart(v, needRestart);
+        //         if (needRestart)goto restart;
+
+        //         Key key;
+        //         loadKey(N::getLeaf(nextNode), key);
+
+        //         level++;
+        //         uint32_t prefixLength = 0;
+        //         while (key[level + prefixLength] == k[level + prefixLength]) {
+        //             prefixLength++;
+        //         }
+
+        //         auto n4 = new N4(&k[level], prefixLength);
+        //         n4->insert(k[level + prefixLength], N::setLeaf(tid));
+        //         n4->insert(key[level + prefixLength], nextNode);
+        //         N::change(node, k[level - 1], n4);
+        //         node->writeUnlock();
+        //         //sum+=count;
+        //         //if(count>1000)printf("%d\n",count);
+        //         //if(count!=0)printf("%d\n",count);
+        //         //levelcount[level]++;
+        //         return;
+        //     }
+        //     level++;//对应key的内部节点  就进入下一层继续搜索
+        //     parentVersion = v;
+        // }
+    }
+
+    void Tree::insert_level(const Key &k, TID tid, int partition_level) {
+        //EpocheGuard epocheGuard(epocheInfo);
+        //int count=0;
+        //cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
+        restart:
+        
+        bool needRestart = false;
+        //cout<<sum++<<endl;
+        // sum.fetch_add(1);
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+        
+        // while (true) {
+        //             parentNode = node;
+        //             parentKey = nodeKey;
+        //             node = nextNode;
+
+        //             uint32_t nextLevel = level;
+        //             uint8_t nonMatchingKey;
+        //             Prefix remainingPrefix;
+        //             auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+        //                                 this->loadKey); // increases level
+        //             switch (res) {
+        //                 case CheckPrefixPessimisticResult::NoMatch: {
+        //                     // 1) Create new node which will be parent of node, Set common prefix, level to this node
+        //                     auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+        //                     // 2)  add node and (tid, *k) as children
+        //                     newNode->insert(k[nextLevel], N::setLeaf(tid));
+        //                     newNode->insert(nonMatchingKey, node);
+        //                     // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+        //                     N::change(parentNode, parentKey, newNode);
+        //                     //parentNode->writeUnlock();
+
+        //                     // 4) update prefix of node, unlock
+        //                     node->setPrefix(remainingPrefix,
+        //                                     node->getPrefixLength() - ((nextLevel - level) + 1));
+        //                     //levelcount[level]++;
+        //                     return;
+        //                 }
+        //                 case CheckPrefixPessimisticResult::Match:
+        //                     break;
+        //             }
+        //             level = nextLevel;
+        //             nodeKey = k[level];
+        //             nextNode = N::getChild(nodeKey, node);
+
+        //             if (nextNode == nullptr) {//没有对应key的儿子节点
+        //                 N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid));
+        //                 //levelcount[level]++;
+        //                 return;
+        //             }
+
+        //             if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+        //                 Key key;
+        //                 loadKey(N::getLeaf(nextNode), key);
+
+        //                 level++;
+        //                 uint32_t prefixLength = 0;
+        //                 while (key[level + prefixLength] == k[level + prefixLength]) {
+        //                     prefixLength++;
+        //                 }
+
+        //                 auto n4 = new N4(&k[level], prefixLength);
+        //                 n4->insert(k[level + prefixLength], N::setLeaf(tid));
+        //                 n4->insert(key[level + prefixLength], nextNode);
+        //                 N::change(node, k[level - 1], n4);
+        //                 //sum+=count;
+        //                 //if(count>1000)printf("%d\n",count);
+        //                 //if(count!=0)printf("%d\n",count);
+        //                 //levelcount[level]++;
+        //                 return;
+        //             }
+        //             level++;//对应key的内部节点  就进入下一层继续搜索
+        //         }
+
+        while (true) {
+            
+            // if(level>partition_level)
+            // {
+            //     while (true) {
+            //         parentNode = node;
+            //         parentKey = nodeKey;
+            //         node = nextNode;
+
+            //         uint32_t nextLevel = level;
+            //         uint8_t nonMatchingKey;
+            //         Prefix remainingPrefix;
+            //         auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+            //                             this->loadKey); // increases level
+            //         switch (res) {
+            //             case CheckPrefixPessimisticResult::NoMatch: {
+            //                 // 1) Create new node which will be parent of node, Set common prefix, level to this node
+            //                 auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+            //                 // 2)  add node and (tid, *k) as children
+            //                 newNode->insert(k[nextLevel], N::setLeaf(tid));
+            //                 newNode->insert(nonMatchingKey, node);
+            //                 // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+            //                 N::change(parentNode, parentKey, newNode);
+            //                 //parentNode->writeUnlock();
+
+            //                 // 4) update prefix of node, unlock
+            //                 node->setPrefix(remainingPrefix,
+            //                                 node->getPrefixLength() - ((nextLevel - level) + 1));
+            //                 //levelcount[level]++;
+            //                 return;
+            //             }
+            //             case CheckPrefixPessimisticResult::Match:
+            //                 break;
+            //         }
+            //         level = nextLevel;
+            //         nodeKey = k[level];
+            //         nextNode = N::getChild(nodeKey, node);
+
+            //         if (nextNode == nullptr) {//没有对应key的儿子节点
+            //             N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid));
+            //             //levelcount[level]++;
+            //             return;
+            //         }
+
+            //         if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+            //             Key key;
+            //             loadKey(N::getLeaf(nextNode), key);
+
+            //             level++;
+            //             uint32_t prefixLength = 0;
+            //             while (key[level + prefixLength] == k[level + prefixLength]) {
+            //                 prefixLength++;
+            //             }
+
+            //             auto n4 = new N4(&k[level], prefixLength);
+            //             n4->insert(k[level + prefixLength], N::setLeaf(tid));
+            //             n4->insert(key[level + prefixLength], nextNode);
+            //             N::change(node, k[level - 1], n4);
+            //             //sum+=count;
+            //             //if(count>1000)printf("%d\n",count);
+            //             //if(count!=0)printf("%d\n",count);
+            //             //levelcount[level]++;
+            //             return;
+            //         }
+            //         level++;//对应key的内部节点  就进入下一层继续搜索
+            //     }
+            // }
+            parentNode = node;
+            parentKey = nodeKey;
+            node = nextNode;
+            auto v = node->readLockOrRestart(needRestart);
+            
+            if (needRestart) goto restart;
+
+            uint32_t nextLevel = level;
+
+            uint8_t nonMatchingKey;
+            Prefix remainingPrefix;
+            auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                   this->loadKey, needRestart); // increases level
+            if (needRestart)goto restart;
+            switch (res) {
+                case CheckPrefixPessimisticResult::NoMatch: {
+                    parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
+                    if (needRestart)goto restart;
+
+                    node->upgradeToWriteLockOrRestart(v, needRestart);
+                    if (needRestart) {
+                        parentNode->writeUnlock();
+                        goto restart;
+                    }
+                    // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                    // 2)  add node and (tid, *k) as children
+                    newNode->insert(k[nextLevel], N::setLeaf(tid));
+                    newNode->insert(nonMatchingKey, node);
+                    
+                    // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    N::change(parentNode, parentKey, newNode);
+                    parentNode->writeUnlock();
+
+                    // 4) update prefix of node, unlock
+                    node->setPrefix(remainingPrefix,
+                                    node->getPrefixLength() - ((nextLevel - level) + 1));
+
+                    node->writeUnlock();
+                    //sum+=count;
+                    //if(count>1000)printf("%d\n",count);
+                    //if(count!=0)printf("%d\n",count);
+                    //levelcount[level]++;
+                    return;
+                }
+                case CheckPrefixPessimisticResult::Match:
+                    break;
+            }
+            level = nextLevel;
+            nodeKey = k[level];
+            nextNode = N::getChild(nodeKey, node);
+            node->checkOrRestart(v,needRestart);
+            if (needRestart)goto restart;
+
+            if (nextNode == nullptr) {//没有对应key的儿子节点
+                N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart);
+                if (needRestart)goto restart;
+                //levelcount[level]++;
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                return;
+            }
+
+            if (parentNode != nullptr) {
+                parentNode->readUnlockOrRestart(parentVersion, needRestart);
+                if (needRestart)goto restart;
+            }
+
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+                node->upgradeToWriteLockOrRestart(v, needRestart);
+                if (needRestart)goto restart;
 
                 Key key;
                 loadKey(N::getLeaf(nextNode), key);
@@ -590,12 +1144,17 @@ namespace ART_OLC {
                 n4->insert(key[level + prefixLength], nextNode);
                 N::change(node, k[level - 1], n4);
                 node->writeUnlock();
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                //levelcount[level]++;
                 return;
             }
-            level++;
+            level++;//对应key的内部节点  就进入下一层继续搜索
             parentVersion = v;
         }
     }
+
 
     void Tree::remove(const Key &k, TID tid, ThreadInfo &threadInfo) {
         EpocheGuard epocheGuard(threadInfo);
@@ -691,6 +1250,262 @@ namespace ART_OLC {
         }
     }
 
+    void Tree::insert_root_and_first()
+    {
+        const uint8_t temp[11]={0};
+        root->setPrefix(temp,0);
+        for(uint i = 0; i < 256; ++i){
+            ((N256*)root)->insert(i, new N256(NULL, 0));
+        }
+    }
+   
+    void Tree::insert_lockfree(const Key &k, TID tid, ThreadInfo &epocheInfo) {
+        //EpocheGuard epocheGuard(epocheInfo);
+
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+
+        while (true) {
+            parentNode = node;
+            parentKey = nodeKey;
+            node = nextNode;
+
+            uint32_t nextLevel = level;
+
+            uint8_t nonMatchingKey;
+            Prefix remainingPrefix;
+            auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                   this->loadKey); // increases level
+            switch (res) {
+                case CheckPrefixPessimisticResult::NoMatch: {
+                    // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                    // 2)  add node and (tid, *k) as children
+                    newNode->insert(k[nextLevel], N::setLeaf(tid));
+                    newNode->insert(nonMatchingKey, node);
+                    if(parentNode==NULL)printf("praent NULL\n");
+                    // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    N::change(parentNode, parentKey, newNode);
+                    //parentNode->writeUnlock();
+
+                    // 4) update prefix of node, unlock
+                    node->setPrefix(remainingPrefix,
+                                    node->getPrefixLength() - ((nextLevel - level) + 1));
+
+                    return;
+                }
+                case CheckPrefixPessimisticResult::Match:
+                    break;
+            }
+	        level = nextLevel;
+            nodeKey = k[level];
+            nextNode = N::getChild(nodeKey, node);
+
+            if (nextNode == nullptr) {//没有对应key的儿子节点
+                N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), epocheInfo);
+
+                return;
+            }
+
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+                Key key;
+                loadKey(N::getLeaf(nextNode), key);
+
+                level++;
+                uint32_t prefixLength = 0;
+                while (key[level + prefixLength] == k[level + prefixLength]) {
+                    prefixLength++;
+                }
+
+                auto n4 = new N4(&k[level], prefixLength);
+                n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                n4->insert(key[level + prefixLength], nextNode);
+                if(node==NULL)printf("node NULL\n");
+                N::change(node, k[level - 1], n4);
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                return;
+            }
+            level++;//对应key的内部节点  就进入下一层继续搜索
+        }
+    }
+
+    void Tree::insert_lockfree(const Key &k, TID tid) {
+        //EpocheGuard epocheGuard(epocheInfo);
+
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+        
+        while (true) {
+            parentNode = node;
+            parentKey = nodeKey;
+            node = nextNode;
+            
+            uint32_t nextLevel = level;
+
+            uint8_t nonMatchingKey;
+            Prefix remainingPrefix;
+            auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                   this->loadKey); // increases level
+            switch (res) {
+                case CheckPrefixPessimisticResult::NoMatch: {
+                    // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                    // 2)  add node and (tid, *k) as children
+                    newNode->insert(k[nextLevel], N::setLeaf(tid));
+                    newNode->insert(nonMatchingKey, node);
+                    if(parentNode==NULL)printf("praent NULL\n"); 
+                    // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    N::change(parentNode, parentKey, newNode);
+                    //parentNode->writeUnlock();
+
+                    // 4) update prefix of node, unlock
+                    node->setPrefix(remainingPrefix,
+                                    node->getPrefixLength() - ((nextLevel - level) + 1));
+
+                    return;
+                }
+                case CheckPrefixPessimisticResult::Match:
+                    break;
+            }
+            level = nextLevel;
+            nodeKey = k[level];
+            nextNode = N::getChild(nodeKey, node);
+
+            if (nextNode == nullptr) {//没有对应key的儿子节点
+                N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid));
+            
+                return;
+            }
+
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+                Key key;
+                loadKey(N::getLeaf(nextNode), key);
+
+                level++;
+                uint32_t prefixLength = 0;
+                while (key[level + prefixLength] == k[level + prefixLength]) {
+                    prefixLength++;
+                }
+
+                auto n4 = new N4(&k[level], prefixLength);
+                n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                n4->insert(key[level + prefixLength], nextNode);
+		if(node==NULL)printf("node NULL\n");
+                N::change(node, k[level - 1], n4);
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                return;
+            }
+            level++;//对应key的内部节点  就进入下一层继续搜索
+        }
+    }
+    
+    void Tree::insert_lockfree(const Key &k, TID tid, ThreadInfo &epocheInfo, Cache &c) {
+        //EpocheGuard epocheGuard(epocheInfo);
+
+        N *node = nullptr;
+        N *nextNode = root;
+        N *parentNode = nullptr;
+        uint8_t parentKey, nodeKey = 0;
+        uint64_t parentVersion = 0;
+        uint32_t level = 0;
+        if(c.cache_node!=NULL)
+        {
+            if(c.cache_key==(tid&0xFFFFFFFFFFFFFF00))
+            {
+                //printf("cache succeed\n");
+                N::insertAndUnlock_lockfree(c.cache_node, c.cache_parentnode, parentVersion, c.cache_parentKey, tid&0x0FF, N::setLeaf(tid),  c);
+                return;
+            }
+        }
+        //printf("cache missed\n");
+        while (true) {
+            parentNode = node;
+            parentKey = nodeKey;
+            node = nextNode;
+
+            uint32_t nextLevel = level;
+
+            uint8_t nonMatchingKey;
+            Prefix remainingPrefix;
+            auto res = checkPrefixPessimistic_lockfree(node, k, nextLevel, nonMatchingKey, remainingPrefix,
+                                   this->loadKey); // increases level
+            switch (res) {
+                case CheckPrefixPessimisticResult::NoMatch: {
+                    // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    auto newNode = new N4(node->getPrefix(), nextLevel - level);
+
+                    // 2)  add node and (tid, *k) as children
+                    newNode->insert(k[nextLevel], N::setLeaf(tid));
+                    newNode->insert(nonMatchingKey, node);
+                    if(parentNode==NULL)printf("praent NULL\n");
+                    // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    N::change(parentNode, parentKey, newNode);
+                    //parentNode->writeUnlock();
+
+                    // 4) update prefix of node, unlock
+                    node->setPrefix(remainingPrefix,
+                                    node->getPrefixLength() - ((nextLevel - level) + 1));
+
+                    return;
+                }
+                case CheckPrefixPessimisticResult::Match:
+                    break;
+            }
+	        level = nextLevel;
+            nodeKey = k[level];
+            nextNode = N::getChild(nodeKey, node);
+
+            if (nextNode == nullptr) {//没有对应key的儿子节点
+                N::insertAndUnlock_lockfree(node, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), c);
+                //c.cache_key = tid & 0xFFFFFFFFFFFFFF00;
+                return;
+            }
+
+            if (N::isLeaf(nextNode)) {//对应key是叶子节点  就进行分裂插入
+
+                Key key;
+                loadKey(N::getLeaf(nextNode), key);
+
+                level++;
+                uint32_t prefixLength = 0;
+                while (key[level + prefixLength] == k[level + prefixLength]) {
+                    prefixLength++;
+                }
+
+                auto n4 = new N4(&k[level], prefixLength);
+                n4->insert(k[level + prefixLength], N::setLeaf(tid));
+                n4->insert(key[level + prefixLength], nextNode);
+                if(node==NULL)printf("node NULL\n");
+                N::change(node, k[level - 1], n4);
+                //sum+=count;
+                //if(count>1000)printf("%d\n",count);
+                //if(count!=0)printf("%d\n",count);
+                c.cache_node = n4;
+                c.cache_parentnode = node;
+                c.cache_parentKey = k[level - 1];
+                c.cache_key = tid & 0xFFFFFFFFFFFFFF00;
+                return;
+            }
+            level++;//对应key的内部节点  就进入下一层继续搜索
+        }
+    }
+
     inline typename Tree::CheckPrefixResult Tree::checkPrefix(N *n, const Key &k, uint32_t &level) {
         if (n->hasPrefix()) {
             if (k.getKeyLen() <= level + n->getPrefixLength()) {
@@ -744,6 +1559,40 @@ namespace ART_OLC {
         }
         return CheckPrefixPessimisticResult::Match;
     }
+
+    typename Tree::CheckPrefixPessimisticResult Tree::checkPrefixPessimistic_lockfree(N *n, const Key &k, uint32_t &level,
+                                                                        uint8_t &nonMatchingKey,
+                                                                        Prefix &nonMatchingPrefix,
+                                                                        LoadKeyFunction loadKey) {
+        if (n->hasPrefix()) {
+            uint32_t prevLevel = level;
+            Key kt;
+            for (uint32_t i = 0; i < n->getPrefixLength(); ++i) {
+                if (i == maxStoredPrefixLength) {
+                    auto anyTID = N::getAnyChildTid_lockfree(n);
+                    loadKey(anyTID, kt);
+                }
+                uint8_t curKey = i >= maxStoredPrefixLength ? kt[level] : n->getPrefix()[i];
+                if (curKey != k[level]) {
+                    nonMatchingKey = curKey;
+                    if (n->getPrefixLength() > maxStoredPrefixLength) {
+                        if (i < maxStoredPrefixLength) {
+                            auto anyTID = N::getAnyChildTid_lockfree(n);
+                            loadKey(anyTID, kt);
+                        }
+                        memcpy(nonMatchingPrefix, &kt[0] + level + 1, std::min((n->getPrefixLength() - (level - prevLevel) - 1),
+                                                                           maxStoredPrefixLength));
+                    } else {
+                        memcpy(nonMatchingPrefix, n->getPrefix() + i + 1, n->getPrefixLength() - i - 1);
+                    }
+                    return CheckPrefixPessimisticResult::NoMatch;
+                }
+                ++level;
+            }
+        }
+        return CheckPrefixPessimisticResult::Match;
+    }
+
 
     typename Tree::PCCompareResults Tree::checkPrefixCompare(const N *n, const Key &k, uint8_t fillKey, uint32_t &level,
                                                         LoadKeyFunction loadKey, bool &needRestart) {

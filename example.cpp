@@ -353,7 +353,7 @@ void test(char **argv)
     int blocksize=n/10000;
 
     //打乱顺序
-    for(int i=0;i<(512000/2)*10;i++)
+    for(int i=0;i<(512000/2)*1;i++)
     {
         int index1=rand()%5120000;
         int index2=rand()%5120000;
@@ -397,15 +397,12 @@ void test(char **argv)
                     //大块生成线程插入
                     // mythread[count]=new thread(thread_fun,p.second,count);
                     // count++;
+                    
                     //由main函数插入
                     int time=0;
                     Key key;
-                    loadKey(p.second->val[0], key);
-                    tree.insert(key, p.second->val[0],p.second->c, time);
-                    loadKey(p.second->val[1], key);
-                    tree.insert(key, p.second->val[1],p.second->c, time);
                     
-                    for(int i=2;i<n;i++)
+                    for(int i=0;i<n;i++)
                     {
                         loadKey(p.second->val[i], key);
                         tree.insert(key, p.second->val[i],p.second->c, time);
@@ -421,6 +418,12 @@ void test(char **argv)
                     }
                 }
             }
+            //多线程join            
+            // for(int i=0;i<2;i++)
+            // {
+            //     mythread[i]->join();
+            // }
+
             for(auto p:mp)
             {
                 delete p.second;
@@ -478,11 +481,11 @@ int main(int argc, char **argv) {
         printf("usage: %s n 0|1|2\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n", argv[0]);
         return 1;
     }
-    // test(argv);   //分桶版本
+    test(argv);   //分桶版本
 
     //singlethreaded(argv);
 
-    multithreaded_ART_OLC(argv);   //原版
+    // multithreaded_ART_OLC(argv);   //原版
 
     return 0;
 }

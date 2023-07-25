@@ -162,6 +162,18 @@ namespace ART_OLC {
     
     template<typename curN, typename biggerN>
     void N::insertGrowBlock(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, Cache &c,int level) {
+        
+        if (!n->isFull()) {
+            if (parentNode != nullptr) {
+                parentNode->readUnlockOrRestart(parentVersion, needRestart);
+                if (needRestart) return;
+            }
+            n->upgradeToWriteLockOrRestart(v, needRestart);
+            if (needRestart) return;
+            n->insert(key, val);
+            n->writeUnlock();
+            return;
+        }
 
         parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
         if (needRestart) return;

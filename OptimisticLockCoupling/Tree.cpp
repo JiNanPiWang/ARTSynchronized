@@ -648,11 +648,14 @@ namespace ART_OLC {
 
             uint8_t nonMatchingKey;
             Prefix remainingPrefix;
+            
             auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
                                    this->loadKey, needRestart); // increases level
             if (needRestart)goto restart;
+            
             switch (res) {
                 case CheckPrefixPessimisticResult::NoMatch: {
+                    
                     parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
                     if (needRestart)goto restart;
 
@@ -687,9 +690,11 @@ namespace ART_OLC {
             nextNode = N::getChild(nodeKey, node);
             node->checkOrRestart(v,needRestart);
             if (needRestart)goto restart;
-
+            
             if (nextNode == nullptr) {//无对应节点  直接插入
+                // cout<<11<<endl;
                 N::insertAndUnlockBlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart, c, level);
+                // cout<<22<<endl;
                 if (needRestart)goto restart;
                 return;
             }

@@ -155,13 +155,13 @@ void multithreaded_ART_OLC(char **argv) {
   
     ART_OLC::Tree tree(loadKey);
     tbb::task_scheduler_init init(atoi(argv[3]));
-    for(int i=0;i<(512000/2)*10;i++)
-    {
-        int index1=rand()%5120000;
-        int index2=rand()%5120000;
-        // cout<<index1<<" "<<index2<<endl;
-        swap(keys[index1],keys[index2]);
-    }
+    // for(int i=0;i<(512000/2)*10;i++)
+    // {
+    //     int index1=rand()%5120000;
+    //     int index2=rand()%5120000;
+    //     // cout<<index1<<" "<<index2<<endl;
+    //     swap(keys[index1],keys[index2]);
+    // }
     int blocksize=n/10000;
     {
         int count[16]={0};
@@ -352,7 +352,7 @@ void test(char **argv)
     int64_t sumparttime=0;
     int blocksize=n/10000;
 
-    //打乱顺序
+    // 打乱顺序
     for(int i=0;i<(512000/2)*1;i++)
     {
         int index1=rand()%5120000;
@@ -404,6 +404,7 @@ void test(char **argv)
                     
                     for(int i=0;i<n;i++)
                     {
+                        
                         loadKey(p.second->val[i], key);
                         tree.insert(key, p.second->val[i],p.second->c, time);
                     }
@@ -431,6 +432,7 @@ void test(char **argv)
             mp.clear();
 
         }
+        // cout<<sum/1000<<endl;
         auto endtime = std::chrono::system_clock::now();
         cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
     }

@@ -5,7 +5,7 @@
 #ifndef ART_OPTIMISTICLOCK_COUPLING_N_H
 #define ART_OPTIMISTICLOCK_COUPLING_N_H
 #include "N.h"
-
+#include<vector>
 using namespace ART;
 
 namespace ART_OLC {
@@ -82,7 +82,13 @@ namespace ART_OLC {
 
         bool lookupRange(const Key &start, TID result[], std::size_t resultLen, std::size_t &resultCount, ThreadInfo &threadEpocheInfo) const;
 
-        void insert(const Key &k, TID tid, ThreadInfo &epocheInfo);
+        void insert(const Key &k, TID tid, ThreadInfo &epocheInfo,int& count);
+
+        void insert(bucket *data, ThreadInfo &epocheInfo);
+
+        void insert(uint64_t *data, ThreadInfo &epocheInfo, uint64_t curtag,bool *active,int n,int now, int &times);
+
+        void insert(uint64_t *data, ThreadInfo &epocheInfo,int n);
 
         void insert(const Key &k, TID tid, Cache& c, int &time);
 

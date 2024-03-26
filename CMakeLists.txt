@@ -18,7 +18,7 @@ find_package (OpenMP REQUIRED)
 set(ART_FILES OptimisticLockCoupling/Tree.cpp ROWEX/Tree.cpp ART/Tree.cpp)
 add_library(ARTSynchronized ${ART_FILES})
 target_link_libraries(ARTSynchronized ${TbbLib} ${JemallocLib} ${CMAKE_THREAD_LIBS_INIT} OpenMP::OpenMP_CXX) 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -g")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -g")
 
 set(SOURCE_FILES example.cpp)
 add_executable(example ${SOURCE_FILES})

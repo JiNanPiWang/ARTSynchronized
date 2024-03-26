@@ -125,6 +125,24 @@ namespace ART_OLC {
     }
     
     template<typename curN, typename biggerN>
+    N* N::insertGrowNow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo) {
+        if (!n->isFull()) {
+            n->insert(key, val);
+            return n;
+        }
+
+        auto nBig = new biggerN(n->getPrefix(), n->getPrefixLength());
+        n->copyTo(nBig);
+        nBig->insert(key, val);
+
+        N::change(parentNode, keyParent, nBig);
+
+        n->writeUnlockObsolete();
+        threadInfo.getEpoche().markNodeForDeletion(n, threadInfo);
+        return nBig;
+    }
+
+    template<typename curN, typename biggerN>
     void N::insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart) {
         if (!n->isFull()) {
             if (parentNode != nullptr) {
@@ -194,6 +212,7 @@ namespace ART_OLC {
             
             c.cache_node=nBig;
             c.cache_parentKey=keyParent;
+            
             n->writeUnlockObsolete();
             operator delete(n);
             parentNode->writeUnlock();
@@ -291,6 +310,29 @@ namespace ART_OLC {
             }
         }
     }
+
+    N* N::insertAndUnlockNow(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo) {
+        switch (node->getType()) {
+            case NTypes::N4: {
+                auto n = static_cast<N4 *>(node);
+                return insertGrowNow<N4, N16>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+            }
+            case NTypes::N16: {
+                auto n = static_cast<N16 *>(node);
+                return insertGrowNow<N16, N48>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+            }
+            case NTypes::N48: {
+                auto n = static_cast<N48 *>(node);
+                return insertGrowNow<N48, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+            }
+            case NTypes::N256: {
+                auto n = static_cast<N256 *>(node);
+                return insertGrowNow<N256, N256>(n, v, parentNode, parentVersion, keyParent, key, val, needRestart, threadInfo);
+            }
+        }
+        
+    }
+
 
     void N::insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart) {
         switch (node->getType()) {

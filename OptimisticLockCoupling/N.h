@@ -9,11 +9,14 @@
 #include <stdint.h>
 #include <atomic>
 #include <string.h>
+#include <vector>
 #include "../Key.h"
 #include "../Epoche.h"
 
 using TID = uint64_t;
 struct Cache;
+struct bucket;
+
 
 using namespace ART;
 namespace ART_OLC {
@@ -95,6 +98,9 @@ namespace ART_OLC {
         static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart,
                                     ThreadInfo &threadInfo);
 
+        static N* insertAndUnlockNow(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart,
+                                    ThreadInfo &threadInfo);
+
         static void insertAndUnlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart);
 
         static void insertAndUnlockBlock(N *node, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, Cache& c, int level);
@@ -142,6 +148,10 @@ namespace ART_OLC {
 
         template<typename curN, typename biggerN>
         static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo);
+
+        template<typename curN, typename biggerN>
+        static N* insertGrowNow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart, ThreadInfo &threadInfo);
+
 
         template<typename curN, typename biggerN>
         static void insertGrow(curN *n, uint64_t v, N *parentNode, uint64_t parentVersion, uint8_t keyParent, uint8_t key, N *val, bool &needRestart);
@@ -328,4 +338,11 @@ struct Cache{
     ART_OLC::N* cache_parentnode;
     uint8_t cache_parentKey;
 };
+struct bucket
+{
+    uint64_t val[256];
+    uint64_t label;
+    int count;
+};
+
 #endif //ART_OPTIMISTIC_LOCK_COUPLING_N_H

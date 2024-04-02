@@ -202,6 +202,8 @@ void multithreaded_ART_OLC(char **argv) {
         // {
             // int amax=0;
             auto t0 = std::chrono::system_clock::now();
+            // tbb::parallel_for：将一段区间平均分配给多个线程并行执行
+            // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
             tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
                 auto t = tree.getThreadInfo();
                 for (uint64_t i = range.begin(); i != range.end(); i++) {
@@ -211,8 +213,13 @@ void multithreaded_ART_OLC(char **argv) {
                     tree.insert(key, keys[i], t, count[tbb::task_arena::current_thread_index()]);
                 }
             });
-            for(int i=0;i<16;i++)cout<<count[i]<<endl,sum+=count[i];
-            cout<<sum<<endl;
+
+            for(int i = 0; i < 16; ++i)
+            {
+                cout << count[i] << endl;
+                sum += count[i];
+            }
+            cout << sum << endl;
             auto t1 = std::chrono::system_clock::now();
             // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         auto endtime = std::chrono::system_clock::now();
@@ -775,9 +782,9 @@ int main(int argc, char **argv) {
     }
     // test(argv);   //分桶版
 
-    singlethreaded(argv);
+    // singlethreaded(argv);
 
-    // multithreaded_ART_OLC(argv);   //原版
+    multithreaded_ART_OLC(argv);   //原版
 
     return 0;
 }

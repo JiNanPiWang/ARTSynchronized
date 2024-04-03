@@ -8,6 +8,13 @@ else()
     message(STATUS "Build type is set to ${CMAKE_BUILD_TYPE}")
 endif()
 
+# 设置编译器标志来禁用警告
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")  # 禁用所有警告
+elseif(MSVC)
+    add_compile_options(/W0)  # 禁用所有警告
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -g -Wall -Wextra -march=native")
 
 # cmake不能直接用$HOME，需要加ENV

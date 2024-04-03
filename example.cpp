@@ -195,8 +195,8 @@ void multithreaded_ART_OLC(char **argv) {
     //     keys[i]=rand();
     // }
     {
-        int count[16]={0};
-        int sum=0;
+        int count[16] = {0};
+        int sum = 0;
         auto starttime = std::chrono::system_clock::now();
         // for(int j=1;j<10000;j++)
         // {
@@ -222,6 +222,7 @@ void multithreaded_ART_OLC(char **argv) {
             cout << sum << endl;
             auto t1 = std::chrono::system_clock::now();
             // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
+        // }
         auto endtime = std::chrono::system_clock::now();
         cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
     }
@@ -775,16 +776,16 @@ void test(char **argv)
 }
 
 
-int main(int argc, char **argv) {
-    if (argc != 4) {
-        printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
-        return 1;
-    }
-    // test(argv);   //分桶版
+// int main(int argc, char **argv) {
+//     if (argc != 4) {
+//         printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
+//         return 1;
+//     }
+//     // test(argv);   //分桶版
 
-    // singlethreaded(argv);
+//     // singlethreaded(argv);
 
-    multithreaded_ART_OLC(argv);   //原版
+//     multithreaded_ART_OLC(argv);   //原版
 
-    return 0;
-}
+//     return 0;
+// }

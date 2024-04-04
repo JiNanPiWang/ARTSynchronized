@@ -501,39 +501,40 @@ namespace ART_OLC {
     }
 
     void Tree::insert(const Key &k, TID tid, ThreadInfo &epocheInfo, int& count) {
-        EpocheGuard epocheGuard(epocheInfo);
+        EpocheGuard epocheGuard(epocheInfo); // 开启一个新的epoch，以确保在此期间读取的任何节点都不会被删除
         // int count=0;
         //cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
         restart:
-        
-        bool needRestart = false;
+
+        bool needRestart = false; // 如果在插入过程中需要重新开始，则设置为true
         //cout<<sum++<<endl;
         // sum.fetch_add(1);
-        N *node = nullptr;
-        N *nextNode = root;
-        N *parentNode = nullptr;
-        uint8_t parentKey, nodeKey = 0;
-        uint64_t parentVersion = 0;
-        uint32_t level = 0;
-        
-        while (true) {
-            // count++;
-            parentNode = node;
-            parentKey = nodeKey;
-            node = nextNode;
-            auto v = node->readLockOrRestart(needRestart);
-            
-            if (needRestart) goto restart;
+        N *node = nullptr; // 当前节点初始化为null
+        N *nextNode = root; // 下一个节点初始化为根节点
+        N *parentNode = nullptr; // 父节点初始化为null
+        uint8_t parentKey, nodeKey = 0; // 父键和节点键初始化为0
+        uint64_t parentVersion = 0; // 父版本号初始化为0
+        uint32_t level = 0; // 当前树的层级初始化为0
 
-            uint32_t nextLevel = level;
+        while (true) { // 循环直到插入完成
+            // count++;
+            parentNode = node; // 设置当前节点为父节点
+            parentKey = nodeKey; // 设置当前键为父键
+            node = nextNode; // 设置下一个节点为当前节点
+            auto v = node->readLockOrRestart(needRestart); // 尝试获取节点的读锁定
+
+            if (needRestart) goto restart; // 如果需要重新开始，则跳转到restart
+
+            uint32_t nextLevel = level; // 下一个层级等于当前层级
 
             uint8_t nonMatchingKey;
             Prefix remainingPrefix;
             auto res = checkPrefixPessimistic(node, k, nextLevel, nonMatchingKey, remainingPrefix,
-                                   this->loadKey, needRestart); // increases level
-            if (needRestart)goto restart;
+                                            this->loadKey, needRestart); // increases level检查节点前缀是否匹配
+            if (needRestart)goto restart; // 如果需要重新开始，则跳转到restart
             switch (res) {
                 case CheckPrefixPessimisticResult::NoMatch: {
+                    // 如果前缀不匹配，则需要创建一个新的内部节点
                     parentNode->upgradeToWriteLockOrRestart(parentVersion, needRestart);
                     if (needRestart)goto restart;
 
@@ -543,17 +544,21 @@ namespace ART_OLC {
                         goto restart;
                     }
                     // 1) Create new node which will be parent of node, Set common prefix, level to this node
+                    // 创建一个新的内部节点作为当前节点的父节点，并设置通用前缀和层级
                     auto newNode = new N4(node->getPrefix(), nextLevel - level);
 
                     // 2)  add node and (tid, *k) as children
+                    // 将当前节点和新的叶子节点（包含TID）添加为新节点的子节点
                     newNode->insert(k[nextLevel], N::setLeaf(tid));
                     newNode->insert(nonMatchingKey, node);
-                    
+
                     // 3) upgradeToWriteLockOrRestart, update parentNode to point to the new node, unlock
+                    // 获取写锁定，更新父节点以指向新节点，解锁
                     N::change(parentNode, parentKey, newNode);
                     parentNode->writeUnlock();
 
                     // 4) update prefix of node, unlock
+                    // 更新当前节点的前缀，解锁
                     node->setPrefix(remainingPrefix,
                                     node->getPrefixLength() - ((nextLevel - level) + 1));
 
@@ -567,15 +572,16 @@ namespace ART_OLC {
                 case CheckPrefixPessimisticResult::Match:
                     break;
             }
-            level = nextLevel;
-            nodeKey = k[level];
-            nextNode = N::getChild(nodeKey, node);
-            node->checkOrRestart(v,needRestart);
-            if (needRestart)goto restart;
+            level = nextLevel; // 设置当前层级为下一层级
+            nodeKey = k[level]; // 设置节点键为键的当前层级对应的值
+            nextNode = N::getChild(nodeKey, node); // 获取当前键对应的子节点
+            node->checkOrRestart(v,needRestart); // 检查节点版本是否变化，如果变化则需要重新开始
+            if (needRestart)goto restart; // 如果需要重新开始，则跳转到restart
 
-            if (nextNode == nullptr) {//没有对应key的儿子节点
+            if (nextNode == nullptr) { // 如果没有对应键的子节点
+                // 直接在当前节点上插入新的叶子节点，并解锁
                 N::insertAndUnlock(node, v, parentNode, parentVersion, parentKey, nodeKey, N::setLeaf(tid), needRestart, epocheInfo);
-                if (needRestart)goto restart;
+                if (needRestart)goto restart; // 如果需要重新开始，则跳转到restart
                 // cout<<count<<endl;
                 // sum+=count;
                 //if(count>1000)printf("%d\n",count);
@@ -584,6 +590,7 @@ namespace ART_OLC {
             }
 
             if (parentNode != nullptr) {
+                // 如果有父节点，解锁父节点
                 parentNode->readUnlockOrRestart(parentVersion, needRestart);
                 if (needRestart)goto restart;
             }
@@ -593,14 +600,16 @@ namespace ART_OLC {
                 if (needRestart)goto restart;
 
                 Key key;
-                loadKey(N::getLeaf(nextNode), key);
+                loadKey(N::getLeaf(nextNode), key); // 加载叶子节点的键
 
                 level++;
                 uint32_t prefixLength = 0;
+                // 计算与待插入键匹配的前缀长度
                 while (key[level + prefixLength] == k[level + prefixLength]) {
                     prefixLength++;
                 }
 
+                // 创建一个新的内部节点并插入两个叶子节点
                 auto n4 = new N4(&k[level], prefixLength);
                 n4->insert(k[level + prefixLength], N::setLeaf(tid));
                 n4->insert(key[level + prefixLength], nextNode);
@@ -613,10 +622,10 @@ namespace ART_OLC {
                 return;
             }
             level++;//对应key的内部节点  就进入下一层继续搜索
-            parentVersion = v;
+            parentVersion = v; // 更新父版本号
         }
     }
-    
+
     void loadKey(TID tid, Key &key) {
     // Store the key of the tuple into the key vector
     // Implementation is database specific

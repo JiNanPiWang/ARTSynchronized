@@ -42,7 +42,8 @@ add_library(ARTSynchronized ${ART_FILES})
 target_link_libraries(ARTSynchronized ${TbbLib} ${JemallocLib} ${CMAKE_THREAD_LIBS_INIT} OpenMP::OpenMP_CXX) 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -g")
 
-set(SOURCE_FILES tests/test_read_data_from_file.cpp)
+#set(SOURCE_FILES tests/test_read_data_from_file.cpp)
+set(SOURCE_FILES example.cpp)
 add_executable(example ${SOURCE_FILES})
 target_link_libraries(example ARTSynchronized)
 

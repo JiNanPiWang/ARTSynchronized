@@ -32,6 +32,8 @@ using namespace std;
 void loadKey(TID tid, Key &key) {
     // Store the key of the tuple into the key vector
     // Implementation is database specific
+    // ？将给定的事务ID（TID）转换为树结构（如ART树）可以使用的键（Key）。
+    // 在你提供的代码中，这个函数用于从一个64位的整数（TID）创建一个Key对象，该对象可用作ART树中的键值。
     key.setKeyLen(sizeof(tid));
     reinterpret_cast<uint64_t *>(&key[0])[0] = __builtin_bswap64(tid);
 }
@@ -157,8 +159,10 @@ void multithreaded_ART_OLC(char **argv) {
 
     // Generate keys
     for (uint64_t i = 0; i < n; i++)
+    {
         // dense, sorted
         keys[i] = i + 1;
+    }
     if (atoi(argv[2]) == 1)
         // dense, random
         std::random_shuffle(keys, keys + n);
@@ -202,12 +206,13 @@ void multithreaded_ART_OLC(char **argv) {
         // {
             // int amax=0;
             auto t0 = std::chrono::system_clock::now();
-            // tbb::parallel_for：将一段区间平均分配给多个线程并行执行
+            // tbb::parallel_for：将一段区间平均分配给多个线程并行执行，但是TBB不保证它会按照线程数均匀地分割这个区间。
             // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
             tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
                 auto t = tree.getThreadInfo();
+                // cout << tbb::task_arena::current_thread_index() << ": ";
+                // cout << range.begin() << " " << range.end() << endl;
                 for (uint64_t i = range.begin(); i != range.end(); i++) {
-                    // cout<<range.end()-range.begin()<<endl;
                     Key key;
                     loadKey(keys[i], key);
                     tree.insert(key, keys[i], t, count[tbb::task_arena::current_thread_index()]);
@@ -776,16 +781,16 @@ void test(char **argv)
 }
 
 
-// int main(int argc, char **argv) {
-//     if (argc != 4) {
-//         printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
-//         return 1;
-//     }
-//     // test(argv);   //分桶版
+int main(int argc, char **argv) {
+    if (argc != 4) {
+        printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
+        return 1;
+    }
+    // test(argv);   //分桶版
 
-//     // singlethreaded(argv);
+    // singlethreaded(argv);
 
-//     multithreaded_ART_OLC(argv);   //原版
+    multithreaded_ART_OLC(argv);   //原版
 
-//     return 0;
-// }
+    return 0;
+}

@@ -8,26 +8,27 @@ uint32_t ipToUint(const std::string &ip) {
     int a, b, c, d, last;
     char dot;
     std::istringstream iss(ip);
-    iss >> a >> dot >> b >> dot >> c >> dot >> d >> dot >> last;
+    iss >> a >> dot >> b >> dot >> c >> dot >> d;
     uint32_t res = (a << 24) | (b << 16) | (c << 8) | d;
     return res;
 }
 
-// 从文件中读取IP地址并转换为uint32_t的列表
 std::vector<uint32_t> readIpAddresses(const std::string &path) {
-    std::ifstream ifs(path);
-    std::vector<uint32_t> res;
-    string line;
-    if (!ifs.is_open()) {
-        std::cerr << "Error: cannot open file " << path << std::endl;
-        return {};
+    std::vector<uint32_t> ipAddresses;
+    std::ifstream infile(path);
+    std::string line;
+
+    while (std::getline(infile, line)) {
+        std::istringstream iss(line);
+        std::string ip;
+        char slash;
+        int subnet;
+        iss >> ip >> slash >> subnet;
+        // 只读取IP地址部分，忽略子网掩码
+        ipAddresses.push_back(ipToUint(ip));
     }
 
-    while (getline(ifs, line))
-    {
-        res.push_back(ipToUint(line));
-    }
-    return res;
+    return ipAddresses;
 }
 
 int main(int argc, char **argv) {
@@ -35,7 +36,7 @@ int main(int argc, char **argv) {
     // cout << std::hex << ipToUint(str) << endl;
     auto data_dir = "../datasets/ipgeo/by-continent/EU.txt";
     auto ipAddresses = readIpAddresses(data_dir);
-    cout << std::hex << ipAddresses[1] << endl;
+    cout << std::hex << ipAddresses[4] << endl;
 
     return 0;
 }

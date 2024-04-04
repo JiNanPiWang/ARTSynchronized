@@ -1,26 +1,27 @@
 #include <iostream>
 #include <chrono>
 #include "tbb/tbb.h"
-#include<unordered_map>
-#include<thread>
+#include <unordered_map>
+#include <thread>
 #include "OptimisticLockCoupling/Tree.h"
 #include "ROWEX/Tree.h"
 #include "ART/Tree.h"
-#include<functional>
-#include<omp.h>
-#include<algorithm>
-#include<map>
-#include<vector>
+#include <functional>
+#include <omp.h>
+#include <algorithm>
+#include <map>
+#include <vector>
 #include <cassert>
-#include<thread>
-#include<queue>
-#include<math.h>
+#include <thread>
+#include <queue>
+#include <math.h>
 #include <mutex>
 #include <condition_variable>
 #include <memory>
-#include<fstream>
-#include<assert.h>
-#include<set>
+#include <fstream>
+#include <assert.h>
+#include <set>
+#include "utils/iptools.h"
 
 using namespace std::literals::chrono_literals;
 using callback = void(*)(void*);
@@ -157,11 +158,14 @@ void multithreaded_ART_OLC(char **argv) {
     //uint64_t *lookkeys = new uint64_t[2*n];
     //std::random_shuffle(lookkeys, lookkeys + 2*n);
 
+
+    auto ips = iptools::readIpAddresses("../datasets/ipgeo/by-continent/EU.txt");
     // Generate keys
     for (uint64_t i = 0; i < n; i++)
     {
         // dense, sorted
-        keys[i] = i + 1;
+        // keys[i] = i + 1;
+        keys[i] = ips[i];
     }
     if (atoi(argv[2]) == 1)
         // dense, random

@@ -517,7 +517,7 @@ namespace ART_OLC {
         uint32_t level = 0; // 当前树的层级初始化为0
 
         while (true) { // 循环直到插入完成
-            // count++;
+            ++count;
             parentNode = node; // 设置当前节点为父节点
             parentKey = nodeKey; // 设置当前键为父键
             node = nextNode; // 设置下一个节点为当前节点

@@ -223,6 +223,7 @@ void multithreaded_ART_OLC(char **argv) {
                 }
             });
 
+            // 由于线程分配的不同以及先后执行次序的不同，每次的结果也不太一样
             for(int i = 0; i < 16; ++i)
             {
                 cout << count[i] << endl;

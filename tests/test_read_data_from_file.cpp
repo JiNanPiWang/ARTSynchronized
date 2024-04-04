@@ -1,5 +1,5 @@
 #include "../example.cpp"
-#include "../utils/iptools.cpp"
+#include "../utils/iptools.h"
 #include <bits/stdc++.h>
 
 using namespace std;

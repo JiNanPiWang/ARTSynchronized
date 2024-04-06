@@ -1,6 +1,12 @@
 import os
 import subprocess
 import re
+import logging
+from datetime import datetime
+
+# 配置
+os.chdir('ARTSynchronized')
+logging.basicConfig(filename='logs/run_log.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
 
 def run():
     filename = 'run_example.sh'
@@ -19,11 +25,14 @@ def get_insert_time(stdout):
     raise ValueError("Insert time not found in the output")
 
 if __name__ == '__main__':
-    os.chdir('ARTSynchronized')
-    n = 2
+    n = 100
     sum_time = 0
     for i in range(n):
         stdout = run()
         _time = get_insert_time(stdout)
         sum_time += _time
-        print(f"Insert time: {_time} us")
+        logging.info(f"Insert time: {_time} us")
+    # 计算平均时间
+    avg_time = sum_time / n
+    # 将平均时间写入日志
+    logging.info(f"Average Insert Time: {avg_time} us")

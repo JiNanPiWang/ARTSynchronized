@@ -27,15 +27,43 @@ def get_insert_time(stdout):
         return int(match.group(1))
     raise ValueError("Insert time not found in the output")
 
-if __name__ == '__main__':
-    n = 100
+def get_insert_count(stdout):
+    match = re.search(r'insert count: (\d+)', stdout)
+    if match:
+        return int(match.group(1))
+    raise ValueError("insert count not found in the output")
+
+def calc_OLC(n):
     sum_time = 0
+    sum_count = 0
     for i in range(n):
         stdout = run()
         _time = get_insert_time(stdout)
+        _count = get_insert_count(stdout)
         sum_time += _time
-        logging.info(f"Insert time: {_time} us")
+        sum_count += _count
+        logging.info(f"Insert time: {_time} us, Insert count: {_count}")
     # 计算平均时间
     avg_time = sum_time / n
     # 将平均时间写入日志
-    logging.info(f"Average Insert Time: {avg_time} us")
+    logging.info(f"OLC average Insert Time: {avg_time} us, average Insert Count: {sum_count / n}")
+
+def calc_ROWEX(n):
+    sum_time = 0
+    sum_count = 0
+    for i in range(n):
+        stdout = run()
+        _time = get_insert_time(stdout)
+        _count = get_insert_count(stdout)
+        sum_time += _time
+        sum_count += _count
+        logging.info(f"Insert time: {_time} us, Insert count: {_count}")
+    # 计算平均时间
+    avg_time = sum_time / n
+    # 将平均时间写入日志
+    logging.info(f"ROWEX average Insert Time: {avg_time} us, average Insert Count: {sum_count / n}")
+
+if __name__ == '__main__':
+    n = 10
+    calc_OLC(n)
+    # calc_ROWEX(n)

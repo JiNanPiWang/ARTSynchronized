@@ -229,7 +229,7 @@ void multithreaded_ART_OLC(char **argv) {
                 // cout << count[i] << endl;
                 sum += count[i];
             }
-            cout << "OLC insert count: " << sum << endl;
+            cout << "insert count: " << sum << endl;
             auto t1 = std::chrono::system_clock::now();
             // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         // }
@@ -355,7 +355,7 @@ void multithreaded_ART_ROWEX(char **argv) {
                 // cout << count[i] << endl;
                 sum += count[i];
             }
-            cout << "ROWEX insert count: " << sum << endl;
+            cout << "insert count: " << sum << endl;
             auto t1 = std::chrono::system_clock::now();
             // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         // }

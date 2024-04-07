@@ -2,11 +2,14 @@ import os
 import subprocess
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-# 配置
-os.chdir('ARTSynchronized')
-logging.basicConfig(filename='logs/run_log.log', level=logging.INFO, format='%(asctime)s:%(levelname)s:%(message)s')
+# 配置日志信息，获取当前UTC+8时间并格式化为字符串
+utc_plus_8 = timezone(timedelta(hours=8))
+current_time = datetime.now(utc_plus_8).strftime('%Y%m%d%H%M%S')
+logging.basicConfig(filename=f'logs/run_log_{current_time}.log', level=logging.INFO, 
+                    format='%(asctime)s:%(levelname)s:%(message)s', datefmt='%Y-%m-%d %H:%M:%S', force=True)
+logging.Formatter.converter = lambda *args: datetime.now(utc_plus_8).timetuple()
 
 def run():
     filename = 'run_example.sh'

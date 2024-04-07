@@ -241,7 +241,7 @@ namespace ART_ROWEX {
         return 0;
     }
 
-    void Tree::insert(const Key &k, TID tid, ThreadInfo &epocheInfo) {
+    void Tree::insert(const Key &k, TID tid, ThreadInfo &epocheInfo, int& count) {
         EpocheGuard epocheGuard(epocheInfo);
         restart:
         bool needRestart = false;
@@ -253,6 +253,7 @@ namespace ART_ROWEX {
         uint32_t level = 0;
 
         while (true) {
+            ++count;
             parentNode = node;
             parentKey = nodeKey;
             node = nextNode;

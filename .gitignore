@@ -1,5 +1,7 @@
 build/
-.vscode/
-cmake-build-debug/
 .idea/
+.vscode/
 logs/
+cmake-build-debug/
+**/__pycache__/
+datasets/generated_ips/*10000*

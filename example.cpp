@@ -159,7 +159,7 @@ void multithreaded_ART_OLC(char **argv) {
     //std::random_shuffle(lookkeys, lookkeys + 2*n);
 
 
-    auto ips = iptools::readIpAddresses("../datasets/ipgeo/by-continent/EU.txt");
+    auto ips = iptools::readIpAddresses("../datasets/generated_ips/continuous_ips_10000k.txt");
     // Generate keys
     for (uint64_t i = 0; i < n; i++)
     {
@@ -175,7 +175,7 @@ void multithreaded_ART_OLC(char **argv) {
         for (uint64_t i = 0; i < n; i++)
             keys[i] = (static_cast<uint64_t>(rand()) << 32) | static_cast<uint64_t>(rand());
 
-  
+
     ART_OLC::Tree tree(loadKey);
     tbb::task_scheduler_init init(atoi(argv[3]));
     // for(int i=0;i<(512000/2)*1;i++)
@@ -208,30 +208,30 @@ void multithreaded_ART_OLC(char **argv) {
         auto starttime = std::chrono::system_clock::now();
         // for(int j=1;j<10000;j++)
         // {
-            // int amax=0;
-            auto t0 = std::chrono::system_clock::now();
-            // tbb::parallel_for：将一段区间平均分配给多个线程并行执行，但是TBB不保证它会按照线程数均匀地分割这个区间。
-            // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
-            tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
-                auto t = tree.getThreadInfo();
-                // cout << tbb::task_arena::current_thread_index() << ": ";
-                // cout << range.begin() << " " << range.end() << endl;
-                for (uint64_t i = range.begin(); i != range.end(); i++) {
-                    Key key;
-                    loadKey(keys[i], key);
-                    tree.insert(key, keys[i], t, count[tbb::task_arena::current_thread_index()]);
-                }
-            });
-
-            // 由于线程分配的不同以及先后执行次序的不同，每次的结果也不太一样
-            for(int i = 0; i < 16; ++i)
-            {
-                // cout << count[i] << endl;
-                sum += count[i];
+        // int amax=0;
+        auto t0 = std::chrono::system_clock::now();
+        // tbb::parallel_for：将一段区间平均分配给多个线程并行执行，但是TBB不保证它会按照线程数均匀地分割这个区间。
+        // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
+        tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
+            auto t = tree.getThreadInfo();
+            // cout << tbb::task_arena::current_thread_index() << ": ";
+            // cout << range.begin() << " " << range.end() << endl;
+            for (uint64_t i = range.begin(); i != range.end(); i++) {
+                Key key;
+                loadKey(keys[i], key);
+                tree.insert(key, keys[i], t, count[tbb::task_arena::current_thread_index()]);
             }
-            cout << "insert count: " << sum << endl;
-            auto t1 = std::chrono::system_clock::now();
-            // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
+        });
+
+        // 由于线程分配的不同以及先后执行次序的不同，每次的结果也不太一样
+        for(int i = 0; i < 16; ++i)
+        {
+            // cout << count[i] << endl;
+            sum += count[i];
+        }
+        cout << "insert count: " << sum << endl;
+        auto t1 = std::chrono::system_clock::now();
+        // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         // }
         auto endtime = std::chrono::system_clock::now();
         cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
@@ -275,23 +275,50 @@ void multithreaded_ART_OLC(char **argv) {
     delete[] keys;
 }
 
-void multithreaded_ART_ROWEX(char **argv) {
+void initializeTrees(std::vector<ART_ROWEX::Tree*> &trees) {
+    for (auto& tree : trees) {
+        tree = new ART_ROWEX::Tree(loadKey);
+    }
+}
+
+void destroyTrees(std::vector<ART_ROWEX::Tree*> &trees) {
+    for (auto& tree : trees) {
+        delete tree;
+    }
+}
+
+
+void multithreaded_ART_ROWEX_hashed(char **argv) {
     std::cout << "multi threaded ART_ROWEX:" << std::endl;
 
     uint64_t n = std::atoll(argv[1]);
     uint64_t *keys = new uint64_t[n];
+    uint8_t *tree_num = new uint8_t[n];
+
+
+    // 创建一个树的数组，每个树对应一个可能的第一个字节值
+    std::vector<ART_ROWEX::Tree*> trees(256);
+    initializeTrees(trees);
 
     //uint64_t *lookkeys = new uint64_t[2*n];
     //std::random_shuffle(lookkeys, lookkeys + 2*n);
 
 
-    auto ips = iptools::readIpAddresses("../datasets/ipgeo/by-continent/EU.txt");
+    // auto ips = iptools::readIpAddresses("../datasets/ipgeo/by-continent/EU.txt");
+    auto ips = iptools::readSplitIpAddresses("../datasets/generated_ips/continuous_ips_10000k.txt");
+    // auto ips = iptools::readSplitIpAddresses("../datasets/generated_ips/continuous_ips_1k.txt");
+    // auto ips = iptools::readSplitIpAddresses("../datasets/generated_ips/random_ips_10000k.txt");
+    // auto ips = iptools::readSplitIpAddresses(argv[4]);
+
+
     // Generate keys
     for (uint64_t i = 0; i < n; i++)
     {
         // dense, sorted
+        // keys[i] = ips[i];
         // keys[i] = i + 1;
-        keys[i] = ips[i];
+        tree_num[i] = ips[i].first;
+        keys[i] = ips[i].second;
     }
     if (atoi(argv[2]) == 1)
         // dense, random
@@ -301,7 +328,7 @@ void multithreaded_ART_ROWEX(char **argv) {
         for (uint64_t i = 0; i < n; i++)
             keys[i] = (static_cast<uint64_t>(rand()) << 32) | static_cast<uint64_t>(rand());
 
-  
+
     ART_ROWEX::Tree tree(loadKey);
     tbb::task_scheduler_init init(atoi(argv[3]));
     // for(int i=0;i<(512000/2)*1;i++)
@@ -334,70 +361,81 @@ void multithreaded_ART_ROWEX(char **argv) {
         auto starttime = std::chrono::system_clock::now();
         // for(int j=1;j<10000;j++)
         // {
-            // int amax=0;
-            auto t0 = std::chrono::system_clock::now();
-            // tbb::parallel_for：将一段区间平均分配给多个线程并行执行，但是TBB不保证它会按照线程数均匀地分割这个区间。
-            // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
-            tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
-                auto t = tree.getThreadInfo();
-                // cout << tbb::task_arena::current_thread_index() << ": ";
-                // cout << range.begin() << " " << range.end() << endl;
-                for (uint64_t i = range.begin(); i != range.end(); i++) {
-                    Key key;
-                    loadKey(keys[i], key);
-                    tree.insert(key, keys[i], t, count[tbb::task_arena::current_thread_index()]);
-                }
-            });
-
-            // 由于线程分配的不同以及先后执行次序的不同，每次的结果也不太一样
-            for(int i = 0; i < 16; ++i)
-            {
-                // cout << count[i] << endl;
-                sum += count[i];
+        // int amax=0;
+        auto t0 = std::chrono::system_clock::now();
+        // tbb::parallel_for：将一段区间平均分配给多个线程并行执行，但是TBB不保证它会按照线程数均匀地分割这个区间。
+        // tbb::blocked_range<uint64_t>(0,n)定义了一个从0到n的区间（n是键的数量）
+        tbb::parallel_for(tbb::blocked_range<uint64_t>(0,n), [&](const tbb::blocked_range<uint64_t> &range) {
+            // auto t = tree.getThreadInfo();
+            vector<ART::ThreadInfo> thread_infos;
+            for (int i = 0; i < 256; i++)
+                thread_infos.push_back(tree.getThreadInfo());
+            // cout << tbb::task_arena::current_thread_index() << ": ";
+            // cout << range.begin() << " " << range.end() << endl;
+            for (uint64_t i = range.begin(); i != range.end(); i++) {
+                Key key;
+                loadKey(keys[i], key);
+                trees[tree_num[i]]->insert(key, keys[i], thread_infos[tree_num[i]],
+                                           count[tbb::task_arena::current_thread_index()]);
             }
-            cout << "insert count: " << sum << endl;
-            auto t1 = std::chrono::system_clock::now();
-            // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
+        });
+
+        // 由于线程分配的不同以及先后执行次序的不同，每次的结果也不太一样
+        // for(int i = 0; i < 16; ++i)
+        // {
+        //     // cout << count[i] << endl;
+        //     sum += count[i];
+        // }
+        // cout << "insert count: " << sum << endl;
+        auto t1 = std::chrono::system_clock::now();
+        // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         // }
         auto endtime = std::chrono::system_clock::now();
-        cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
+        // cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
+        cout << "insert time: " << std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count() << " us" << endl;
     }
 
-    {
-        // Lookup
-        auto starttime = std::chrono::system_clock::now();
-        tbb::parallel_for(tbb::blocked_range<uint64_t>(0, n), [&](const tbb::blocked_range<uint64_t> &range) {
-            auto t = tree.getThreadInfo();
-            for (uint64_t i = range.begin(); i != range.end(); i++) {
-                Key key;
-                loadKey(keys[i], key);
-                auto val = tree.lookup(key, t);
-                //printf("%d",i);
-                if (val != keys[i]) {
-                    std::cout << "wrong key read: " << val << " expected:" << keys[i] << std::endl;
-                    throw;
-                }
-            }
-
-        });
-        auto endtime = std::chrono::system_clock::now();
-        cout<<"lookup, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
-    }
-
-    {
-        auto starttime = std::chrono::system_clock::now();
-
-        tbb::parallel_for(tbb::blocked_range<uint64_t>(0, n), [&](const tbb::blocked_range<uint64_t> &range) {
-            auto t = tree.getThreadInfo();
-            for (uint64_t i = range.begin(); i != range.end(); i++) {
-                Key key;
-                loadKey(keys[i], key);
-                tree.remove(key, keys[i], t);
-            }
-        });
-        auto endtime = std::chrono::system_clock::now();
-        cout<<"remove, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
-    }
+    // {
+    //     // Lookup
+    //     auto starttime = std::chrono::system_clock::now();
+    //     tbb::parallel_for(tbb::blocked_range<uint64_t>(0, n), [&](const tbb::blocked_range<uint64_t> &range) {
+    //         // auto t = tree.getThreadInfo();
+    //         vector<ART::ThreadInfo> thread_infos;
+    //         for (int i = 0; i < 256; i++)
+    //             thread_infos.push_back(tree.getThreadInfo());
+    //         for (uint64_t i = range.begin(); i != range.end(); i++) {
+    //             Key key;
+    //             loadKey(keys[i], key);
+    //             auto val = trees[tree_num[i]]->lookup(key, thread_infos[tree_num[i]]);
+    //             //printf("%d",i);
+    //             if (val != keys[i]) {
+    //                 std::cout << "wrong key read: " << val << " expected:" << keys[i] << std::endl;
+    //                 throw;
+    //             }
+    //         }
+    //
+    //     });
+    //     auto endtime = std::chrono::system_clock::now();
+    //     cout<<"lookup, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
+    // }
+    //
+    // {
+    //     auto starttime = std::chrono::system_clock::now();
+    //
+    //     tbb::parallel_for(tbb::blocked_range<uint64_t>(0, n), [&](const tbb::blocked_range<uint64_t> &range) {
+    //         // auto t = tree.getThreadInfo();
+    //         vector<ART::ThreadInfo> thread_infos;
+    //         for (int i = 0; i < 256; i++)
+    //             thread_infos.push_back(tree.getThreadInfo());
+    //         for (uint64_t i = range.begin(); i != range.end(); i++) {
+    //             Key key;
+    //             loadKey(keys[i], key);
+    //             trees[tree_num[i]]->remove(key, keys[i], thread_infos[tree_num[i]]);
+    //         }
+    //     });
+    //     auto endtime = std::chrono::system_clock::now();
+    //     cout<<"remove, "<<n<<" "<<std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count()<<"us"<<endl;
+    // }
     delete[] keys;
 }
 
@@ -405,7 +443,7 @@ void multithreaded_ART_ROWEX(char **argv) {
 class ThreadPool {
 private:
     bool m_open_flag;                     // 表示线程池运行标志，用于线程回收
-                  // 线程池中剩余线程数，用于检测线程退出
+    // 线程池中剩余线程数，用于检测线程退出
 
     mutex m_mutex_run;                    // 用于线程运行时互斥，主要是互斥操作任务队列
     mutex m_mutex_quit;                   // 用于线程退出时互斥
@@ -415,7 +453,7 @@ private:
     queue<function<void()>> m_task_queue; // 线程池任务队列
 
 public:
-    int m_thread_count;     
+    int m_thread_count;
     explicit ThreadPool(int thread_count = THREAD_MAX_NUM) {
         assert(thread_count > 0);
 
@@ -480,8 +518,8 @@ void thread_function(vector<uint64_t> *bucket,int index)
     // outfile.open("out.txt",ios::out);
     //out << "test";
     while(flag){std::this_thread::sleep_for(std::chrono::nanoseconds(1));};
-    
-    
+
+
     //Cache c;
     //c.cache_node=NULL; 
     int n=bucket->size();
@@ -489,12 +527,12 @@ void thread_function(vector<uint64_t> *bucket,int index)
     int64_t sum=0;
     // auto t = tree.getThreadInfo();
     auto starttime = std::chrono::system_clock::now();
-    
+
     for(int i=0;i<n;i++)
     {
         // auto t0 = std::chrono::system_clock::now();
         Key key;
-        loadKey((*bucket)[i], key);        
+        loadKey((*bucket)[i], key);
         // tree.insert_lockfree(key, (*bucket)[i], t);
         tree.insert_level(key, (*bucket)[i],0);
         // auto t1 = std::chrono::system_clock::now();
@@ -502,14 +540,14 @@ void thread_function(vector<uint64_t> *bucket,int index)
         // {
         //     outfile<<"thread_id: "<<index<<", key: "<<(*bucket)[i]<<", time: "<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<"us"<<endl;
         // }
-        
+
         // if(std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()>10)
         // {
         //     printf("thread_id: %d, key: %lx, time: %dus\n",index,(*bucket)[i],std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count());
         // }
         // sum+=std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count();
     }
-    
+
     auto endtime = std::chrono::system_clock::now();
     // outfile.close();
     // if((*bucket)[0]==0x643c986966334873)
@@ -517,7 +555,7 @@ void thread_function(vector<uint64_t> *bucket,int index)
     //     for(int i=0;i<n;i++)printf("%lx\n",(*bucket)[i]);
     // }
     // printf("bucket: %d,size: %d,time: %dus\n",index,bucket->size(),std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count());
-    
+
     // amax=max(amax,sum);
     amax=max(amax,std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count());
     // amax+=std::chrono::duration_cast<std::chrono::microseconds>(endtime-starttime).count();
@@ -579,13 +617,13 @@ void test(char **argv)
         keys[i] = i;
     if (atoi(argv[2]) == 1)
         // dense, random
+    {
+        std::random_shuffle(keys, keys + n);
+        for(int i=0;i<n;i++)
         {
-            std::random_shuffle(keys, keys + n);
-            for(int i=0;i<n;i++)
-            {
-                keys[i]=keys[i]<<16;
-            }
+            keys[i]=keys[i]<<16;
         }
+    }
     if (atoi(argv[2]) == 2)
     {
         for (uint64_t i = 0; i < n; i++)
@@ -593,7 +631,7 @@ void test(char **argv)
             keys[i] = (static_cast<uint64_t>(rand()) << 32) | static_cast<uint64_t>(rand());
         }
     }
-    
+
     tbb::task_scheduler_init init(atoi(argv[3]));
 
     int sumtime=0;
@@ -630,7 +668,7 @@ void test(char **argv)
         // bool *active=new bool[n];
         bool flag = true;
         // for(int i=0;i<n;i++)active[i]=true;
-        priority_queue<uint64_t> q;  
+        priority_queue<uint64_t> q;
         auto starttime = std::chrono::system_clock::now();
         // for(int i=0;i<n;i++)
         // {
@@ -645,12 +683,12 @@ void test(char **argv)
         // # pragma omp parallel num_threads(16)
         // for(int i=0;i<16;i++)
         // {
-            // for(int i=0;j<n;j++)
-            // {
-            //     Key key;
-            //     loadKey(keys[i], key);
-            //     tree.insert_lockfree(key, keys[i]);
-            // }
+        // for(int i=0;j<n;j++)
+        // {
+        //     Key key;
+        //     loadKey(keys[i], key);
+        //     tree.insert_lockfree(key, keys[i]);
+        // }
         // }
         //分块插入
         // unordered_map<uint64_t,block*>mp;  
@@ -675,7 +713,7 @@ void test(char **argv)
         //     //     bucketcount++;
         //     // }
         //     */
-            
+
         //     //哈希分块
         //     if(mp.find(prefix)==mp.end())
         //     {
@@ -913,17 +951,18 @@ void test(char **argv)
 
 
 int main(int argc, char **argv) {
-    if (argc != 4) {
-        printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
-        return 1;
-    }
-    // test(argv);   //分桶版
+    // if (argc != 4) {
+    //     printf("usage: %s n 0|1|2 线程数 test需要自己修改代码 原版直接输入\nn: number of keys\n0: sorted keys\n1: dense keys\n2: sparse keys\n样例 ./example 5120000 0 1", argv[0]);
+    //     return 1;
+    // }
+    test(argv);   //分桶版
 
     // singlethreaded(argv);
 
-    multithreaded_ART_OLC(argv);   //原版
+    // multithreaded_ART_OLC(argv);   //原版
 
-    // multithreaded_ART_ROWEX(argv);   //原版
+    multithreaded_ART_ROWEX_hashed(argv);   //原版
+
 
     return 0;
 }

@@ -504,9 +504,12 @@ namespace ART_OLC {
         EpocheGuard epocheGuard(epocheInfo); // 开启一个新的epoch，以确保在此期间读取的任何节点都不会被删除
         // int count=0;
         //cout<<"insert, "<<n<<" "<<std::chrono::duration_cast<std::chrono::milliseconds>(endtime-starttime).count()<<"ms"<<endl;
+        int cnt = 0;
         restart:
-
-        bool needRestart = false; // 如果在插入过程中需要重新开始，则设置为true
+        // if (cnt > 0)
+        //     std::cout << "No." << cnt << " restart" << std::endl;
+        cnt++;
+        bool needRestart = false;
         //cout<<sum++<<endl;
         // sum.fetch_add(1);
         N *node = nullptr; // 当前节点初始化为null

@@ -610,11 +610,15 @@ void test(char **argv)
     uint64_t n = std::atoll(argv[1]);
     uint64_t *keys = new uint64_t[n];
 
-
+    // auto ips = iptools::readIpAddresses("../datasets/ipgeo/by-continent/EU.txt");
+    // auto ips = iptools::readSplitIpAddresses("../datasets/generated_ips/continuous_ips_10000k.txt");
+    auto ips = iptools::readIpAddresses("../datasets/generated_ips/continuous_ips_100k.txt");
+    // auto ips = iptools::readIpAddresses("../datasets/generated_ips/random_ips_10000k.txt");
+    // auto ips = iptools::readSplitIpAddresses(argv[4]);
     // Generate keys
     for (uint64_t i = 0; i < n; i++)
         // dense, sorted
-        keys[i] = i;
+        keys[i] = ips[i];
     if (atoi(argv[2]) == 1)
         // dense, random
     {
@@ -665,7 +669,7 @@ void test(char **argv)
         auto t = tree.getThreadInfo();
         // uint64_t buckets[16][100000];
         // int count[16]={0};
-        // bool *active=new bool[n];
+        bool *active=new bool[n];
         bool flag = true;
         // for(int i=0;i<n;i++)active[i]=true;
         priority_queue<uint64_t> q;
@@ -690,47 +694,47 @@ void test(char **argv)
         //     tree.insert_lockfree(key, keys[i]);
         // }
         // }
-        //分块插入
-        // unordered_map<uint64_t,block*>mp;  
-        // auto t0 = std::chrono::system_clock::now();
-        // for(int i=0;i<n;i++)
-        // {
-        //     uint64_t prefix=keys[i]&(0xFFFFFFFFFFFFFF00);
-        //     /*直接分块
-        //     // int j;
-        //     // for(j=0;j<bucketcount;j++)
-        //     // {
-        //     //     if(prefix==data[j].label)
-        //     //     {
-        //     //         data[j].val.push_back(keys[i]);
-        //     //         break;
-        //     //     }
-        //     // }
-        //     // if(j==bucketcount)
-        //     // {
-        //     //     data[j].label=prefix;
-        //     //     data[j].val.push_back(keys[i]);
-        //     //     bucketcount++;
-        //     // }
-        //     */
+        // 分块插入
+        unordered_map<uint64_t,block*>mp;
+        auto t0 = std::chrono::system_clock::now();
+        for(int i=0;i<n;i++)
+        {
+            uint64_t prefix=keys[i]&(0xFFFFFFFFFFFFFF00);
+            /*直接分块
+            // int j;
+            // for(j=0;j<bucketcount;j++)
+            // {
+            //     if(prefix==data[j].label)
+            //     {
+            //         data[j].val.push_back(keys[i]);
+            //         break;
+            //     }
+            // }
+            // if(j==bucketcount)
+            // {
+            //     data[j].label=prefix;
+            //     data[j].val.push_back(keys[i]);
+            //     bucketcount++;
+            // }
+            */
 
-        //     //哈希分块
-        //     if(mp.find(prefix)==mp.end())
-        //     {
-        //         block* p=new block();
-        //         // p->c.cache_node=NULL;
-        //         mp[prefix]=p;
-        //         // p->val.push_back(keys[i]);
-        //         p->count=1;
-        //         p->data[0]=keys[i];
-        //     }
-        //     else 
-        //     {
-        //         // mp[prefix]->val.push_back(keys[i]);
-        //         mp[prefix]->data[mp[prefix]->count]=keys[i];
-        //         mp[prefix]->count++;
-        //     }
-        // }
+            //哈希分块
+            if(mp.find(prefix)==mp.end())
+            {
+                block* p=new block();
+                // p->c.cache_node=NULL;
+                mp[prefix]=p;
+                // p->val.push_back(keys[i]);
+                p->count=1;
+                p->data[0]=keys[i];
+            }
+            else
+            {
+                // mp[prefix]->val.push_back(keys[i]);
+                mp[prefix]->data[mp[prefix]->count]=keys[i];
+                mp[prefix]->count++;
+            }
+        }
         // auto t1 = std::chrono::system_clock::now();
         // // cout<<mp.size()<<endl;
         // for(auto p:mp)
@@ -741,41 +745,41 @@ void test(char **argv)
         // }
 
         //挨个查找插入
-        // int i=0;
-        // while(flag)
-        // {
-        //     flag=false;
-        //     uint64_t curtag;
-        //     int times=0;
-        //     for(;i<n;i++)
-        //     {
-        //         if(active[i])
-        //         {
-        //             // active[i]=false;
-        //             flag=true;
-        //             curtag=keys[i]&(0xFFFFFFFFFFFFFF00);
-        //             // printf("active[i]=%d\n",active[i]);
-        //             break;
-        //         }
-        //     }
-        //     tree.insert(keys,t,curtag,active,n,i,times);
-        //     if(times<5)
-        //     {
-        //         int j=i+5;
-        //         Key key;
-        //         while(i<n&&i<j)
-        //         {
-        //             if(active[i])
-        //             {
-        //                 loadKey(keys[i], key);
-        //                 tree.insert(key, keys[i], t, times);
-        //                 // q.push(keys[i]);
-        //                 active[i]=false;
-        //             }
-        //             i++;
-        //         }
-        //     }
-        // }
+        int i=0;
+        while(flag)
+        {
+            flag=false;
+            uint64_t curtag;
+            int times=0;
+            for(;i<n;i++)
+            {
+                if(active[i])
+                {
+                    // active[i]=false;
+                    flag=true;
+                    curtag=keys[i]&(0xFFFFFFFFFFFFFF00);
+                    // printf("active[i]=%d\n",active[i]);
+                    break;
+                }
+            }
+            tree.insert(keys,t,curtag,active,n,i,times);
+            if(times<5)
+            {
+                int j=i+5;
+                Key key;
+                while(i<n&&i<j)
+                {
+                    if(active[i])
+                    {
+                        loadKey(keys[i], key);
+                        tree.insert(key, keys[i], t, times);
+                        // q.push(keys[i]);
+                        active[i]=false;
+                    }
+                    i++;
+                }
+            }
+        }
         //到这为止
 
         /*
@@ -809,12 +813,12 @@ void test(char **argv)
         //     // cout<<11<<endl;
         // }
         //  10000批插入
-        // unordered_map<uint64_t,block*>mp[10000];  
+        // unordered_map<uint64_t,block*>mp[10000];
         // for(int j=0;j<10000;j++)
         // {
         //     //分桶
         //     // cout<<j<<endl;
-            
+
         //     auto t0 = std::chrono::system_clock::now();
         //     // block *data=new block[256];
         //     int bucketcount=0;
@@ -843,7 +847,7 @@ void test(char **argv)
         //             mp[j][prefix]=p;
         //             p->val.push_back(keys[i]);
         //         }
-        //         else 
+        //         else
         //         {
         //             mp[j][prefix]->val.push_back(keys[i]);
         //         }
@@ -862,15 +866,15 @@ void test(char **argv)
         //             // mythread[count]=new thread(thread_fun,p.second,count);
         //             // count++;
         //             // cout<<p.second->val.size()<<endl;
-                    
+
         //             // thread_pool.addTask(bind(thread_fun, p.second));
         //             //由main函数插入
         //             int time=0;
         //             Key key;
-                    
+
         //             for(int i=0;i<n;i++)
         //             {
-                        
+
         //                 loadKey(p.second->val[i], key);
         //                 tree.insert(key, p.second->val[i],p.second->c, time);
         //             }
@@ -887,7 +891,7 @@ void test(char **argv)
         //     }
         //     // auto t1 = std::chrono::system_clock::now();
         //     // cout<<std::chrono::duration_cast<std::chrono::microseconds>(t1-t0).count()<<endl;
-        // //     //多线程join            
+        // //     //多线程join
         // //     // for(int i=0;i<2;i++)
         // //     // {
         // //     //     mythread[i]->join();
@@ -898,7 +902,7 @@ void test(char **argv)
         // //         // cout<<thread_pool.m_thread_count<<endl;
         // //         // std::this_thread::sleep_for(std::chrono::nanoseconds(1));
         // //     // }
-            
+
 
         // }
         */
